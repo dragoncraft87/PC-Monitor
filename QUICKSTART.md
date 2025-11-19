@@ -5,7 +5,7 @@
 Siehe `WIRING.md` - Alle Displays an ESP32-S3:
 
 ```
-Alle 4 Displays teilen: SCK (GPIO 18), MOSI (GPIO 23), VCC, GND
+Alle 4 Displays teilen: SCK (GPIO 4), MOSI (GPIO 5), VCC, GND
 Jedes Display eigene:   CS, DC, RST Pins (siehe WIRING.md)
 ```
 
