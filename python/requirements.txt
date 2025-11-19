@@ -1,0 +1,4 @@
+psutil>=5.9.0
+pyserial>=3.5
+GPUtil>=1.4.0
+wmi>=1.5.1; sys_platform == 'win32'

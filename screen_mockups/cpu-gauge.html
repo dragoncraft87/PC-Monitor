@@ -1,0 +1,211 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>CPU Gauge Design</title>
+    <style>
+        body {
+            margin: 0;
+            padding: 20px;
+            background: #1a1a1a;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            min-height: 100vh;
+            font-family: 'Segoe UI', Tahoma, sans-serif;
+        }
+
+        .back-button {
+            position: absolute;
+            top: 20px;
+            left: 20px;
+            background: rgba(255,255,255,0.1);
+            color: white;
+            padding: 10px 20px;
+            border-radius: 20px;
+            text-decoration: none;
+            backdrop-filter: blur(10px);
+        }
+
+        .display-container {
+            position: relative;
+            width: 240px;
+            height: 240px;
+            background: #000;
+            border-radius: 50%;
+            overflow: hidden;
+            box-shadow: 0 0 50px rgba(102, 126, 234, 0.5);
+        }
+
+        .display {
+            width: 100%;
+            height: 100%;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            position: relative;
+        }
+
+        .gauge-container {
+            position: absolute;
+            width: 200px;
+            height: 200px;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+        }
+
+        .gauge-bg {
+            fill: none;
+            stroke: #222;
+            stroke-width: 20;
+        }
+
+        .gauge-progress {
+            fill: none;
+            stroke: url(#gradient);
+            stroke-width: 20;
+            stroke-linecap: round;
+            transform: rotate(-90deg);
+            transform-origin: 50% 50%;
+            transition: stroke-dashoffset 0.5s ease;
+        }
+
+        .center-content {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            text-align: center;
+            z-index: 10;
+        }
+
+        .label {
+            color: #888;
+            font-size: 14px;
+            margin-bottom: 5px;
+            text-transform: uppercase;
+            letter-spacing: 2px;
+        }
+
+        .value {
+            color: #fff;
+            font-size: 42px;
+            font-weight: bold;
+            line-height: 1;
+            text-shadow: 0 0 10px rgba(102, 126, 234, 0.8);
+        }
+
+        .temp {
+            color: #ff6b6b;
+            font-size: 20px;
+            margin-top: 8px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 5px;
+        }
+
+        .temp-icon {
+            font-size: 16px;
+        }
+
+        .info {
+            color: white;
+            text-align: center;
+            margin-top: 30px;
+            padding: 20px;
+            background: rgba(255,255,255,0.1);
+            border-radius: 20px;
+            backdrop-filter: blur(10px);
+        }
+
+        .info h2 {
+            margin: 0 0 10px 0;
+            color: #667eea;
+        }
+
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.6; }
+        }
+
+        .pulsing {
+            animation: pulse 2s ease-in-out infinite;
+        }
+    </style>
+</head>
+<body>
+    <a href="index.html" class="back-button">← Zurück zur Übersicht</a>
+
+    <div class="display-container">
+        <div class="display">
+            <div class="gauge-container">
+                <svg width="200" height="200" viewBox="0 0 200 200">
+                    <defs>
+                        <linearGradient id="gradient" x1="0%" y1="0%" x2="100%" y2="0%">
+                            <stop offset="0%" style="stop-color:#667eea;stop-opacity:1" />
+                            <stop offset="100%" style="stop-color:#764ba2;stop-opacity:1" />
+                        </linearGradient>
+                    </defs>
+                    <circle cx="100" cy="100" r="90" class="gauge-bg"/>
+                    <circle cx="100" cy="100" r="90" class="gauge-progress" id="cpuGauge"
+                            stroke-dasharray="565.48" stroke-dashoffset="0"/>
+                </svg>
+            </div>
+            
+            <div class="center-content">
+                <div class="label">CPU</div>
+                <div class="value" id="cpuValue">45%</div>
+                <div class="temp">
+                    <span class="temp-icon pulsing">🌡️</span>
+                    <span id="tempValue">62.5°C</span>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="info">
+        <h2>CPU Gauge Style</h2>
+        <p>Ring zeigt Auslastung (0-100%)</p>
+        <p>Temperatur in der Mitte</p>
+        <p>Farben: Blau → Lila</p>
+    </div>
+
+    <script>
+        // Simuliere CPU-Werte
+        function updateCPU() {
+            const cpuPercent = Math.floor(Math.random() * 40) + 30; // 30-70%
+            const cpuTemp = (Math.random() * 20 + 50).toFixed(1); // 50-70°C
+            
+            // Update Werte
+            document.getElementById('cpuValue').textContent = cpuPercent + '%';
+            document.getElementById('tempValue').textContent = cpuTemp + '°C';
+            
+            // Update Gauge (565.48 = Umfang des Kreises)
+            const circumference = 565.48;
+            const offset = circumference - (cpuPercent / 100) * circumference;
+            document.getElementById('cpuGauge').style.strokeDashoffset = offset;
+            
+            // Temperatur-Farbe anpassen
+            const tempElement = document.getElementById('tempValue');
+            if (cpuTemp > 70) {
+                tempElement.style.color = '#ff4444';
+            } else if (cpuTemp > 60) {
+                tempElement.style.color = '#ff6b6b';
+            } else {
+                tempElement.style.color = '#4CAF50';
+            }
+        }
+        
+        // Initial update
+        updateCPU();
+        
+        // Update alle 2 Sekunden
+        setInterval(updateCPU, 2000);
+    </script>
+</body>
+</html>

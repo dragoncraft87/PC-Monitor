@@ -1,0 +1,256 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Cyberpunk Style Design</title>
+    <style>
+        body {
+            margin: 0;
+            padding: 20px;
+            background: #0a0a0a;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            min-height: 100vh;
+            font-family: 'Courier New', monospace;
+        }
+
+        .back-button {
+            position: absolute;
+            top: 20px;
+            left: 20px;
+            background: rgba(0,255,255,0.2);
+            color: #0ff;
+            padding: 10px 20px;
+            border-radius: 20px;
+            text-decoration: none;
+            backdrop-filter: blur(10px);
+            border: 1px solid #0ff;
+            text-shadow: 0 0 10px #0ff;
+        }
+
+        .display-container {
+            position: relative;
+            width: 240px;
+            height: 240px;
+            background: #000;
+            border-radius: 50%;
+            overflow: hidden;
+            box-shadow: 
+                0 0 30px rgba(255, 0, 255, 0.6),
+                0 0 60px rgba(0, 255, 255, 0.4),
+                inset 0 0 30px rgba(255, 0, 255, 0.2);
+            border: 2px solid rgba(255, 0, 255, 0.5);
+        }
+
+        .display {
+            width: 100%;
+            height: 100%;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            padding: 30px;
+            box-sizing: border-box;
+            position: relative;
+        }
+
+        .grid-bg {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            opacity: 0.1;
+            background-image: 
+                linear-gradient(rgba(0, 255, 255, 0.5) 1px, transparent 1px),
+                linear-gradient(90deg, rgba(0, 255, 255, 0.5) 1px, transparent 1px);
+            background-size: 20px 20px;
+            animation: gridScroll 10s linear infinite;
+        }
+
+        @keyframes gridScroll {
+            0% { transform: translateY(0); }
+            100% { transform: translateY(20px); }
+        }
+
+        .cyber-label {
+            color: #0ff;
+            font-size: 12px;
+            margin-bottom: 10px;
+            text-transform: uppercase;
+            letter-spacing: 3px;
+            text-shadow: 0 0 10px #0ff, 0 0 20px #0ff;
+            z-index: 10;
+        }
+
+        .cyber-value {
+            color: #f0f;
+            font-size: 52px;
+            font-weight: bold;
+            line-height: 1;
+            text-shadow: 
+                0 0 10px #f0f,
+                0 0 20px #f0f,
+                0 0 30px #f0f;
+            z-index: 10;
+            animation: glitch 5s infinite;
+        }
+
+        @keyframes glitch {
+            0%, 90%, 100% { 
+                transform: translate(0); 
+                filter: hue-rotate(0deg);
+            }
+            91% { 
+                transform: translate(-2px, 2px); 
+                filter: hue-rotate(90deg);
+            }
+            92% { 
+                transform: translate(2px, -2px); 
+                filter: hue-rotate(-90deg);
+            }
+            93% { 
+                transform: translate(-2px, -2px); 
+                filter: hue-rotate(45deg);
+            }
+            94% { 
+                transform: translate(0); 
+                filter: hue-rotate(0deg);
+            }
+        }
+
+        .cyber-bars {
+            width: 100%;
+            margin-top: 15px;
+            z-index: 10;
+        }
+
+        .cyber-bar-row {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 8px;
+        }
+
+        .cyber-bar-label {
+            color: #0ff;
+            font-size: 10px;
+            text-shadow: 0 0 5px #0ff;
+        }
+
+        .cyber-bar {
+            flex: 1;
+            height: 4px;
+            background: rgba(0, 255, 255, 0.2);
+            margin: 0 8px;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .cyber-bar-fill {
+            height: 100%;
+            background: linear-gradient(90deg, #0ff, #f0f);
+            box-shadow: 0 0 10px #0ff;
+            animation: pulse 2s ease-in-out infinite;
+        }
+
+        @keyframes pulse {
+            0%, 100% { box-shadow: 0 0 10px #0ff; }
+            50% { box-shadow: 0 0 20px #0ff, 0 0 30px #f0f; }
+        }
+
+        .scanline {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 2px;
+            background: rgba(0, 255, 255, 0.3);
+            animation: scan 3s linear infinite;
+            z-index: 20;
+        }
+
+        @keyframes scan {
+            0% { transform: translateY(0); }
+            100% { transform: translateY(240px); }
+        }
+
+        .info {
+            color: #0ff;
+            text-align: center;
+            margin-top: 30px;
+            padding: 20px;
+            background: rgba(0, 255, 255, 0.1);
+            border-radius: 20px;
+            backdrop-filter: blur(10px);
+            border: 1px solid rgba(0, 255, 255, 0.3);
+        }
+
+        .info h2 {
+            margin: 0 0 10px 0;
+            color: #f0f;
+            text-shadow: 0 0 10px #f0f;
+        }
+    </style>
+</head>
+<body>
+    <a href="index.html" class="back-button">← ZURÜCK</a>
+
+    <div class="display-container">
+        <div class="display">
+            <div class="grid-bg"></div>
+            <div class="scanline"></div>
+            
+            <div class="cyber-label">SYSTEM.EXE</div>
+            <div class="cyber-value" id="mainValue">45%</div>
+            
+            <div class="cyber-bars">
+                <div class="cyber-bar-row">
+                    <span class="cyber-bar-label">CPU</span>
+                    <div class="cyber-bar">
+                        <div class="cyber-bar-fill" id="cpuBar" style="width: 45%"></div>
+                    </div>
+                </div>
+                <div class="cyber-bar-row">
+                    <span class="cyber-bar-label">GPU</span>
+                    <div class="cyber-bar">
+                        <div class="cyber-bar-fill" id="gpuBar" style="width: 72%"></div>
+                    </div>
+                </div>
+                <div class="cyber-bar-row">
+                    <span class="cyber-bar-label">RAM</span>
+                    <div class="cyber-bar">
+                        <div class="cyber-bar-fill" id="ramBar" style="width: 65%"></div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="info">
+        <h2>CYBERPUNK.SYS</h2>
+        <p>Neon-Farben & Glitch-Effekte</p>
+        <p>Futuristisches Grid-Design</p>
+        <p>Scanline-Animation</p>
+    </div>
+
+    <script>
+        function updateCyber() {
+            const cpuPercent = Math.floor(Math.random() * 40) + 30;
+            const gpuPercent = Math.floor(Math.random() * 50) + 40;
+            const ramPercent = Math.floor(Math.random() * 30) + 50;
+            
+            document.getElementById('mainValue').textContent = cpuPercent + '%';
+            document.getElementById('cpuBar').style.width = cpuPercent + '%';
+            document.getElementById('gpuBar').style.width = gpuPercent + '%';
+            document.getElementById('ramBar').style.width = ramPercent + '%';
+        }
+        
+        updateCyber();
+        setInterval(updateCyber, 2000);
+    </script>
+</body>
+</html>

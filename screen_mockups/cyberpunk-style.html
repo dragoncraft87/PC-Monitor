@@ -1,0 +1,368 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Cyberpunk Network Monitor</title>
+    <style>
+        body {
+            margin: 0;
+            padding: 20px;
+            background: #0a0a0a;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            min-height: 100vh;
+            font-family: 'Courier New', monospace;
+        }
+
+        .back-button {
+            position: absolute;
+            top: 20px;
+            left: 20px;
+            background: rgba(0,255,255,0.2);
+            color: #0ff;
+            padding: 10px 20px;
+            border-radius: 20px;
+            text-decoration: none;
+            backdrop-filter: blur(10px);
+            border: 1px solid #0ff;
+            text-shadow: 0 0 10px #0ff;
+        }
+
+        .display-container {
+            position: relative;
+            width: 240px;
+            height: 240px;
+            background: #000;
+            border-radius: 50%;
+            overflow: hidden;
+            box-shadow: 
+                0 0 30px rgba(0, 255, 255, 0.8),
+                0 0 60px rgba(0, 255, 255, 0.4),
+                inset 0 0 30px rgba(0, 255, 255, 0.2);
+            border: 2px solid rgba(0, 255, 255, 0.7);
+        }
+
+        .display {
+            width: 100%;
+            height: 100%;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            padding: 25px;
+            box-sizing: border-box;
+            position: relative;
+        }
+
+        .grid-bg {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            opacity: 0.08;
+            background-image: 
+                linear-gradient(rgba(0, 255, 255, 0.5) 1px, transparent 1px),
+                linear-gradient(90deg, rgba(0, 255, 255, 0.5) 1px, transparent 1px);
+            background-size: 20px 20px;
+        }
+
+        .scanline {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 1px;
+            background: rgba(0, 255, 255, 0.4);
+            animation: scan 3s linear infinite;
+            z-index: 20;
+        }
+
+        @keyframes scan {
+            0% { transform: translateY(0); }
+            100% { transform: translateY(240px); }
+        }
+
+        .net-header {
+            color: #0ff;
+            font-size: 11px;
+            margin-bottom: 8px;
+            text-transform: uppercase;
+            letter-spacing: 2px;
+            text-shadow: 0 0 10px #0ff;
+            z-index: 10;
+        }
+
+        .connection-type {
+            color: #0ff;
+            font-size: 20px;
+            font-weight: bold;
+            margin-bottom: 3px;
+            text-shadow: 0 0 15px #0ff;
+            z-index: 10;
+            animation: pulse-text 2s ease-in-out infinite;
+        }
+
+        @keyframes pulse-text {
+            0%, 100% { 
+                text-shadow: 0 0 15px #0ff;
+                opacity: 1;
+            }
+            50% { 
+                text-shadow: 0 0 25px #0ff, 0 0 35px #0ff;
+                opacity: 0.8;
+            }
+        }
+
+        .speed-indicator {
+            color: #f0f;
+            font-size: 16px;
+            margin-bottom: 10px;
+            text-shadow: 0 0 10px #f0f;
+            z-index: 10;
+        }
+
+        .graph-container {
+            width: 170px;
+            height: 55px;
+            position: relative;
+            margin-bottom: 12px;
+            z-index: 10;
+            background: rgba(0, 20, 40, 0.5);
+            border: 1px solid rgba(0, 255, 255, 0.3);
+            border-radius: 5px;
+            overflow: hidden;
+        }
+
+        .graph-canvas {
+            width: 100%;
+            height: 100%;
+        }
+
+        .traffic-stats {
+            width: 140px;
+            display: flex;
+            justify-content: space-between;
+            z-index: 10;
+            font-size: 10px;
+            margin: 0 auto;
+        }
+
+        .stat-item {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+        }
+
+        .stat-label {
+            color: #0ff;
+            text-shadow: 0 0 5px #0ff;
+            margin-bottom: 2px;
+        }
+
+        .stat-value {
+            color: #f0f;
+            font-weight: bold;
+            text-shadow: 0 0 5px #f0f;
+        }
+
+        .corner-accent {
+            position: absolute;
+            width: 30px;
+            height: 30px;
+            border: 2px solid rgba(0, 255, 255, 0.5);
+            z-index: 5;
+        }
+
+        .corner-tl {
+            top: 20px;
+            left: 20px;
+            border-right: none;
+            border-bottom: none;
+        }
+
+        .corner-br {
+            bottom: 20px;
+            right: 20px;
+            border-left: none;
+            border-top: none;
+        }
+
+        .info {
+            color: #0ff;
+            text-align: center;
+            margin-top: 30px;
+            padding: 20px;
+            background: rgba(0, 255, 255, 0.1);
+            border-radius: 20px;
+            backdrop-filter: blur(10px);
+            border: 1px solid rgba(0, 255, 255, 0.3);
+        }
+
+        .info h2 {
+            margin: 0 0 10px 0;
+            color: #0ff;
+            text-shadow: 0 0 10px #0ff;
+        }
+    </style>
+</head>
+<body>
+    <a href="index.html" class="back-button">← ZURÜCK</a>
+
+    <div class="display-container">
+        <div class="display">
+            <div class="grid-bg"></div>
+            <div class="scanline"></div>
+            <div class="corner-accent corner-tl"></div>
+            <div class="corner-accent corner-br"></div>
+            
+            <div class="net-header">NETWORK.SYS</div>
+            <div class="connection-type" id="connectionType">LAN</div>
+            <div class="speed-indicator" id="speedIndicator">1000 Mbps</div>
+            
+            <div class="graph-container">
+                <canvas id="trafficGraph" class="graph-canvas"></canvas>
+            </div>
+            
+            <div class="traffic-stats">
+                <div class="stat-item">
+                    <span class="stat-label">↓ DOWN</span>
+                    <span class="stat-value" id="downSpeed">12.4 MB/s</span>
+                </div>
+                <div class="stat-item">
+                    <span class="stat-label">↑ UP</span>
+                    <span class="stat-value" id="upSpeed">2.1 MB/s</span>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="info">
+        <h2>CYBERPUNK NETWORK</h2>
+        <p>Connection Type & Speed</p>
+        <p>Real-time Traffic Graph (60s)</p>
+        <p>Upload/Download Stats</p>
+    </div>
+
+    <script>
+        const canvas = document.getElementById('trafficGraph');
+        const ctx = canvas.getContext('2d');
+        
+        // Set canvas size
+        canvas.width = 170;
+        canvas.height = 55;
+        
+        // Traffic history (60 data points = 60 seconds)
+        let trafficHistory = [];
+        for (let i = 0; i < 60; i++) {
+            trafficHistory.push({
+                down: Math.random() * 15,
+                up: Math.random() * 5
+            });
+        }
+        
+        // Connection types to cycle through
+        const connections = [
+            { type: 'LAN', speed: '1000 Mbps' },
+            { type: 'LAN', speed: '2500 Mbps' },
+            { type: 'WiFi', speed: '866 Mbps' },
+            { type: 'LAN', speed: '100 Mbps' }
+        ];
+        let currentConnection = 0;
+        
+        function drawGraph() {
+            // Clear canvas
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            
+            // Draw grid
+            ctx.strokeStyle = 'rgba(0, 255, 255, 0.1)';
+            ctx.lineWidth = 1;
+            for (let i = 0; i < 6; i++) {
+                const y = (canvas.height / 5) * i;
+                ctx.beginPath();
+                ctx.moveTo(0, y);
+                ctx.lineTo(canvas.width, y);
+                ctx.stroke();
+            }
+            
+            // Draw download graph (cyan)
+            ctx.strokeStyle = '#0ff';
+            ctx.lineWidth = 2;
+            ctx.shadowBlur = 10;
+            ctx.shadowColor = '#0ff';
+            ctx.beginPath();
+            
+            trafficHistory.forEach((point, index) => {
+                const x = (canvas.width / 59) * index;
+                const y = canvas.height - (point.down / 20 * canvas.height);
+                
+                if (index === 0) {
+                    ctx.moveTo(x, y);
+                } else {
+                    ctx.lineTo(x, y);
+                }
+            });
+            ctx.stroke();
+            
+            // Draw upload graph (magenta)
+            ctx.strokeStyle = '#f0f';
+            ctx.shadowColor = '#f0f';
+            ctx.beginPath();
+            
+            trafficHistory.forEach((point, index) => {
+                const x = (canvas.width / 59) * index;
+                const y = canvas.height - (point.up / 20 * canvas.height);
+                
+                if (index === 0) {
+                    ctx.moveTo(x, y);
+                } else {
+                    ctx.lineTo(x, y);
+                }
+            });
+            ctx.stroke();
+            
+            ctx.shadowBlur = 0;
+        }
+        
+        function updateNetwork() {
+            // Add new traffic data
+            const newData = {
+                down: Math.random() * 15 + 2, // 2-17 MB/s
+                up: Math.random() * 5 + 0.5   // 0.5-5.5 MB/s
+            };
+            
+            trafficHistory.push(newData);
+            if (trafficHistory.length > 60) {
+                trafficHistory.shift();
+            }
+            
+            // Update display values
+            document.getElementById('downSpeed').textContent = newData.down.toFixed(1) + ' MB/s';
+            document.getElementById('upSpeed').textContent = newData.up.toFixed(1) + ' MB/s';
+            
+            // Redraw graph
+            drawGraph();
+        }
+        
+        function cycleConnection() {
+            currentConnection = (currentConnection + 1) % connections.length;
+            const conn = connections[currentConnection];
+            
+            document.getElementById('connectionType').textContent = conn.type;
+            document.getElementById('speedIndicator').textContent = conn.speed;
+        }
+        
+        // Initial draw
+        drawGraph();
+        
+        // Update traffic every second
+        setInterval(updateNetwork, 1000);
+        
+        // Change connection type every 10 seconds (for demo)
+        setInterval(cycleConnection, 10000);
+    </script>
+</body>
+</html>

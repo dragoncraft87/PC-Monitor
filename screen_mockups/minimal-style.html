@@ -1,0 +1,140 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Minimal Style Design</title>
+    <style>
+        body {
+            margin: 0;
+            padding: 20px;
+            background: #1a1a1a;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            min-height: 100vh;
+            font-family: 'Segoe UI', Tahoma, sans-serif;
+        }
+
+        .back-button {
+            position: absolute;
+            top: 20px;
+            left: 20px;
+            background: rgba(255,255,255,0.1);
+            color: white;
+            padding: 10px 20px;
+            border-radius: 20px;
+            text-decoration: none;
+            backdrop-filter: blur(10px);
+        }
+
+        .display-container {
+            position: relative;
+            width: 240px;
+            height: 240px;
+            background: #000;
+            border-radius: 50%;
+            overflow: hidden;
+            box-shadow: 0 0 50px rgba(255, 255, 255, 0.2);
+        }
+
+        .display {
+            width: 100%;
+            height: 100%;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .main-icon {
+            font-size: 48px;
+            margin-bottom: 15px;
+            filter: drop-shadow(0 0 10px rgba(255,255,255,0.5));
+        }
+
+        .main-value {
+            color: #fff;
+            font-size: 64px;
+            font-weight: 300;
+            line-height: 1;
+            letter-spacing: -2px;
+        }
+
+        .main-label {
+            color: #888;
+            font-size: 14px;
+            margin-top: 10px;
+            text-transform: uppercase;
+            letter-spacing: 3px;
+        }
+
+        .info {
+            color: white;
+            text-align: center;
+            margin-top: 30px;
+            padding: 20px;
+            background: rgba(255,255,255,0.1);
+            border-radius: 20px;
+            backdrop-filter: blur(10px);
+        }
+
+        .info h2 {
+            margin: 0 0 10px 0;
+            color: #ddd;
+        }
+
+        @keyframes float {
+            0%, 100% { transform: translateY(0px); }
+            50% { transform: translateY(-10px); }
+        }
+
+        .main-icon {
+            animation: float 3s ease-in-out infinite;
+        }
+    </style>
+</head>
+<body>
+    <a href="index.html" class="back-button">← Zurück zur Übersicht</a>
+
+    <div class="display-container">
+        <div class="display">
+            <div class="main-icon" id="mainIcon">⚡</div>
+            <div class="main-value" id="mainValue">45</div>
+            <div class="main-label" id="mainLabel">CPU %</div>
+        </div>
+    </div>
+
+    <div class="info">
+        <h2>Minimal Style</h2>
+        <p>Ein Wert im Fokus - rotiert durch:</p>
+        <p>CPU → GPU → RAM → Temp</p>
+        <p>Große, klare Typografie</p>
+    </div>
+
+    <script>
+        const stats = [
+            { icon: '⚡', label: 'CPU %', getValue: () => Math.floor(Math.random() * 40) + 30 },
+            { icon: '🎮', label: 'GPU %', getValue: () => Math.floor(Math.random() * 50) + 40 },
+            { icon: '💾', label: 'RAM GB', getValue: () => (Math.random() * 8 + 6).toFixed(1) },
+            { icon: '🌡️', label: 'TEMP °C', getValue: () => Math.floor(Math.random() * 20) + 55 }
+        ];
+
+        let currentIndex = 0;
+
+        function rotateStat() {
+            const stat = stats[currentIndex];
+            
+            document.getElementById('mainIcon').textContent = stat.icon;
+            document.getElementById('mainValue').textContent = stat.getValue();
+            document.getElementById('mainLabel').textContent = stat.label;
+            
+            currentIndex = (currentIndex + 1) % stats.length;
+        }
+        
+        rotateStat();
+        setInterval(rotateStat, 3000);
+    </script>
+</body>
+</html>

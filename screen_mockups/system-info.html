@@ -1,0 +1,235 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>System Info Design</title>
+    <style>
+        body {
+            margin: 0;
+            padding: 20px;
+            background: #1a1a1a;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            min-height: 100vh;
+            font-family: 'Segoe UI', Tahoma, sans-serif;
+        }
+
+        .back-button {
+            position: absolute;
+            top: 20px;
+            left: 20px;
+            background: rgba(255,255,255,0.1);
+            color: white;
+            padding: 10px 20px;
+            border-radius: 20px;
+            text-decoration: none;
+            backdrop-filter: blur(10px);
+        }
+
+        .display-container {
+            position: relative;
+            width: 240px;
+            height: 240px;
+            background: #000;
+            border-radius: 50%;
+            overflow: hidden;
+            box-shadow: 0 0 50px rgba(255, 197, 61, 0.5);
+        }
+
+        .display {
+            width: 100%;
+            height: 100%;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            padding: 30px 20px;
+            box-sizing: border-box;
+        }
+
+        .title {
+            color: #888;
+            font-size: 14px;
+            margin-bottom: 20px;
+            text-transform: uppercase;
+            letter-spacing: 2px;
+        }
+
+        .info-row {
+            width: 100%;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            margin-bottom: 15px;
+            padding: 8px 10px;
+            background: rgba(255,255,255,0.05);
+            border-radius: 10px;
+        }
+
+        .info-label {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            color: #888;
+            font-size: 13px;
+        }
+
+        .info-icon {
+            font-size: 16px;
+        }
+
+        .info-value {
+            color: #fff;
+            font-size: 14px;
+            font-weight: bold;
+        }
+
+        .status-dot {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            display: inline-block;
+            margin-left: 5px;
+        }
+
+        .status-online {
+            background: #4CAF50;
+            box-shadow: 0 0 8px #4CAF50;
+        }
+
+        .status-offline {
+            background: #666;
+        }
+
+        .fan-speed {
+            color: #ffc53d;
+        }
+
+        .info {
+            color: white;
+            text-align: center;
+            margin-top: 30px;
+            padding: 20px;
+            background: rgba(255,255,255,0.1);
+            border-radius: 20px;
+            backdrop-filter: blur(10px);
+        }
+
+        .info h2 {
+            margin: 0 0 10px 0;
+            color: #ffc53d;
+        }
+
+        @keyframes spin {
+            from { transform: rotate(0deg); }
+            to { transform: rotate(360deg); }
+        }
+
+        .spinning {
+            display: inline-block;
+            animation: spin 2s linear infinite;
+        }
+
+        @keyframes blink {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.3; }
+        }
+
+        .status-online {
+            animation: blink 2s ease-in-out infinite;
+        }
+    </style>
+</head>
+<body>
+    <a href="index.html" class="back-button">← Zurück zur Übersicht</a>
+
+    <div class="display-container">
+        <div class="display">
+            <div class="title">ℹ️ SYSTEM</div>
+            
+            <div class="info-row">
+                <div class="info-label">
+                    <span class="info-icon">⏱️</span>
+                    <span>Uptime</span>
+                </div>
+                <div class="info-value" id="uptime">3d 14h 23m</div>
+            </div>
+
+            <div class="info-row">
+                <div class="info-label">
+                    <span class="info-icon">🌐</span>
+                    <span>Network</span>
+                </div>
+                <div class="info-value">
+                    <span id="networkStatus">LAN</span>
+                    <span class="status-dot status-online"></span>
+                </div>
+            </div>
+
+            <div class="info-row">
+                <div class="info-label">
+                    <span class="info-icon spinning">💨</span>
+                    <span>CPU Fan</span>
+                </div>
+                <div class="info-value fan-speed" id="cpuFan">1234 RPM</div>
+            </div>
+
+            <div class="info-row">
+                <div class="info-label">
+                    <span class="info-icon spinning">💨</span>
+                    <span>Case Fans</span>
+                </div>
+                <div class="info-value fan-speed" id="caseFans">987 RPM</div>
+            </div>
+        </div>
+    </div>
+
+    <div class="info">
+        <h2>System Info Design</h2>
+        <p>Uptime, Netzwerkstatus, Lüfter</p>
+        <p>Status-Indikatoren mit Dots</p>
+        <p>Kompakte Icon-basierte Darstellung</p>
+    </div>
+
+    <script>
+        let uptimeSeconds = 290580; // 3d 14h 23m in Sekunden
+
+        function formatUptime(seconds) {
+            const days = Math.floor(seconds / 86400);
+            const hours = Math.floor((seconds % 86400) / 3600);
+            const minutes = Math.floor((seconds % 3600) / 60);
+            
+            if (days > 0) {
+                return `${days}d ${hours}h ${minutes}m`;
+            } else if (hours > 0) {
+                return `${hours}h ${minutes}m`;
+            } else {
+                return `${minutes}m`;
+            }
+        }
+
+        function updateSystem() {
+            // Uptime erhöhen
+            uptimeSeconds += 2;
+            document.getElementById('uptime').textContent = formatUptime(uptimeSeconds);
+            
+            // Network Status (simuliere gelegentliche WiFi-Wechsel)
+            const isLAN = Math.random() > 0.1; // 90% LAN, 10% WiFi
+            document.getElementById('networkStatus').textContent = isLAN ? 'LAN' : 'WiFi';
+            
+            // Lüftergeschwindigkeiten variieren
+            const cpuFanSpeed = Math.floor(Math.random() * 300 + 1100); // 1100-1400 RPM
+            const caseFanSpeed = Math.floor(Math.random() * 200 + 850); // 850-1050 RPM
+            
+            document.getElementById('cpuFan').textContent = cpuFanSpeed + ' RPM';
+            document.getElementById('caseFans').textContent = caseFanSpeed + ' RPM';
+        }
+        
+        updateSystem();
+        setInterval(updateSystem, 2000);
+    </script>
+</body>
+</html>

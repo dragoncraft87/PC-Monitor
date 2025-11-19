@@ -1,0 +1,6 @@
+# Ordner für VS Code und Entwicklungsumgebung
+.devcontainer/
+.vscode/
+
+# Build-Artefakte
+build/

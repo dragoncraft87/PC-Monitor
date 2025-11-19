@@ -1,0 +1,13 @@
+idf_component_register(
+    SRCS
+        "main.c"
+        "gc9a01.c"
+        "graphics.c"
+        "bitmap_fonts.c"
+        "screen_cpu.c"
+        "screen_gpu.c"
+        "screen_ram.c"
+        "screen_network.c"
+    INCLUDE_DIRS 
+        "."
+)
