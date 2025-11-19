@@ -57,13 +57,13 @@ esp_err_t gc9a01_init(gc9a01_handle_t *handle, const gc9a01_pins_t *pins, int sp
     
     // Hardware reset
     gpio_set_level(pins->rst, 0);
-    vTaskDelay(pdMS_TO_TICKS(100));
+    vTaskDelay(pdMS_TO_TICKS(10));
     gpio_set_level(pins->rst, 1);
-    vTaskDelay(pdMS_TO_TICKS(100));
+    vTaskDelay(pdMS_TO_TICKS(120));
     
     // SPI device configuration
     spi_device_interface_config_t devcfg = {
-        .clock_speed_hz = 10 * 1000 * 1000,
+        .clock_speed_hz = 40 * 1000 * 1000,
         .mode = 0,
         .spics_io_num = pins->cs,
         .queue_size = 7,
@@ -71,101 +71,110 @@ esp_err_t gc9a01_init(gc9a01_handle_t *handle, const gc9a01_pins_t *pins, int sp
     
     ESP_ERROR_CHECK(spi_bus_add_device(spi_host, &devcfg, &handle->spi));
     
-    // Initialize display
-// --- Start der vollständigen GC9A01 Init-Sequenz ---
+    ESP_LOGI(TAG, "Starting GC9A01 initialization sequence...");
+    
+    // ===== VOLLSTÄNDIGE GC9A01 INIT SEQUENZ =====
+    
+    // Inter Register Enable1
     gc9a01_send_cmd(handle, 0xEF);
+    
+    // Inter Register Enable2
     gc9a01_send_cmd(handle, 0xEB);
     gc9a01_send_data(handle, 0x14);
-
-    gc9a01_send_cmd(handle, 0xFE);
-    gc9a01_send_cmd(handle, 0xEF);
-
-    gc9a01_send_cmd(handle, 0xEB);
-    gc9a01_send_data(handle, 0x14);
-
+    
+    // Display Function Control
     gc9a01_send_cmd(handle, 0x84);
     gc9a01_send_data(handle, 0x40);
-
+    
     gc9a01_send_cmd(handle, 0x85);
     gc9a01_send_data(handle, 0xFF);
-
+    
     gc9a01_send_cmd(handle, 0x86);
     gc9a01_send_data(handle, 0xFF);
-
+    
     gc9a01_send_cmd(handle, 0x87);
     gc9a01_send_data(handle, 0xFF);
-
+    
     gc9a01_send_cmd(handle, 0x88);
     gc9a01_send_data(handle, 0x0A);
-
+    
     gc9a01_send_cmd(handle, 0x89);
     gc9a01_send_data(handle, 0x21);
-
+    
     gc9a01_send_cmd(handle, 0x8A);
     gc9a01_send_data(handle, 0x00);
-
+    
     gc9a01_send_cmd(handle, 0x8B);
     gc9a01_send_data(handle, 0x80);
-
+    
     gc9a01_send_cmd(handle, 0x8C);
     gc9a01_send_data(handle, 0x01);
-
+    
     gc9a01_send_cmd(handle, 0x8D);
     gc9a01_send_data(handle, 0x01);
-
+    
     gc9a01_send_cmd(handle, 0x8E);
     gc9a01_send_data(handle, 0xFF);
-
+    
     gc9a01_send_cmd(handle, 0x8F);
     gc9a01_send_data(handle, 0xFF);
-
+    
+    // Display Function Control
     gc9a01_send_cmd(handle, 0xB6);
     gc9a01_send_data(handle, 0x00);
-    gc9a01_send_data(handle, 0x00);
-
-    gc9a01_send_cmd(handle, GC9A01_MADCTL);
-    gc9a01_send_data(handle, 0x48); // HIER IST DEINE KORREKTUR 0x48
-
-    gc9a01_send_cmd(handle, GC9A01_COLMOD);
-    gc9a01_send_data(handle, 0x05); // 16-bit color
-
+    gc9a01_send_data(handle, 0x20);
+    
+    // Memory Access Control (Rotation)
+    gc9a01_send_cmd(handle, 0x36);
+    gc9a01_send_data(handle, 0x08);
+    
+    // Pixel Format Set (16bit/pixel RGB565)
+    gc9a01_send_cmd(handle, 0x3A);
+    gc9a01_send_data(handle, 0x05);
+    
+    // Frame Rate Control
     gc9a01_send_cmd(handle, 0x90);
     gc9a01_send_data(handle, 0x08);
     gc9a01_send_data(handle, 0x08);
     gc9a01_send_data(handle, 0x08);
     gc9a01_send_data(handle, 0x08);
-
+    
+    // Display Inversion Control
     gc9a01_send_cmd(handle, 0xBD);
     gc9a01_send_data(handle, 0x06);
-
+    
+    // RGB Interface Signal Control
     gc9a01_send_cmd(handle, 0xBC);
     gc9a01_send_data(handle, 0x00);
-
-    gc9a01_send_cmd(handle, 0xFF);
-    gc9a01_send_data(handle, 0x60);
-    gc9a01_send_data(handle, 0x01);
-    gc9a01_send_data(handle, 0x04);
-
+    
+    // Power Control 1
     gc9a01_send_cmd(handle, 0xC3);
     gc9a01_send_data(handle, 0x13);
+    
+    // Power Control 2
     gc9a01_send_cmd(handle, 0xC4);
     gc9a01_send_data(handle, 0x13);
-
+    
+    // Power Control 3
     gc9a01_send_cmd(handle, 0xC9);
     gc9a01_send_data(handle, 0x22);
-
+    
+    // VCOM Control
     gc9a01_send_cmd(handle, 0xBE);
     gc9a01_send_data(handle, 0x11);
-
+    
+    // Negative Voltage Gamma Control
     gc9a01_send_cmd(handle, 0xE1);
     gc9a01_send_data(handle, 0x10);
     gc9a01_send_data(handle, 0x0E);
-
+    
+    // Positive Voltage Gamma Control
     gc9a01_send_cmd(handle, 0xDF);
     gc9a01_send_data(handle, 0x21);
     gc9a01_send_data(handle, 0x0c);
     gc9a01_send_data(handle, 0x02);
-
+    
+    // Gamma Set
     gc9a01_send_cmd(handle, 0xF0);
     gc9a01_send_data(handle, 0x45);
     gc9a01_send_data(handle, 0x09);
@@ -173,7 +182,7 @@ esp_err_t gc9a01_init(gc9a01_handle_t *handle, const gc9a01_pins_t *pins, int sp
     gc9a01_send_data(handle, 0x08);
     gc9a01_send_data(handle, 0x26);
     gc9a01_send_data(handle, 0x2A);
-
+    
     gc9a01_send_cmd(handle, 0xF1);
     gc9a01_send_data(handle, 0x43);
     gc9a01_send_data(handle, 0x70);
@@ -181,7 +190,7 @@ esp_err_t gc9a01_init(gc9a01_handle_t *handle, const gc9a01_pins_t *pins, int sp
     gc9a01_send_data(handle, 0x36);
     gc9a01_send_data(handle, 0x37);
     gc9a01_send_data(handle, 0x6F);
-
+    
     gc9a01_send_cmd(handle, 0xF2);
     gc9a01_send_data(handle, 0x45);
     gc9a01_send_data(handle, 0x09);
@@ -189,7 +198,7 @@ esp_err_t gc9a01_init(gc9a01_handle_t *handle, const gc9a01_pins_t *pins, int sp
     gc9a01_send_data(handle, 0x08);
     gc9a01_send_data(handle, 0x26);
     gc9a01_send_data(handle, 0x2A);
-
+    
     gc9a01_send_cmd(handle, 0xF3);
     gc9a01_send_data(handle, 0x43);
     gc9a01_send_data(handle, 0x70);
@@ -197,115 +206,16 @@ esp_err_t gc9a01_init(gc9a01_handle_t *handle, const gc9a01_pins_t *pins, int sp
     gc9a01_send_data(handle, 0x36);
     gc9a01_send_data(handle, 0x37);
     gc9a01_send_data(handle, 0x6F);
-
-    gc9a01_send_cmd(handle, 0xED);
-    gc9a01_send_data(handle, 0x1B);
-    gc9a01_send_data(handle, 0x0B);
-
-    gc9a01_send_cmd(handle, 0xAE);
-    gc9a01_send_data(handle, 0x77);
-
-    gc9a01_send_cmd(handle, 0xCD);
-    gc9a01_send_data(handle, 0x63);
-
-    gc9a01_send_cmd(handle, 0x70);
-    gc9a01_send_data(handle, 0x07);
-    gc9a01_send_data(handle, 0x07);
-    gc9a01_send_data(handle, 0x04);
-    gc9a01_send_data(handle, 0x0E);
-    gc9a01_send_data(handle, 0x0F);
-    gc9a01_send_data(handle, 0x09);
-    gc9a01_send_data(handle, 0x07);
-    gc9a01_send_data(handle, 0x08);
-    gc9a01_send_data(handle, 0x03);
-
-    gc9a01_send_cmd(handle, 0xE8);
-    gc9a01_send_data(handle, 0x34);
-
-    gc9a01_send_cmd(handle, 0x62);
-    gc9a01_send_data(handle, 0x18);
-    gc9a01_send_data(handle, 0x0D);
-    gc9a01_send_data(handle, 0x71);
-    gc9a01_send_data(handle, 0xED);
-    gc9a01_send_data(handle, 0x70);
-    gc9a01_send_data(handle, 0x70);
-    gc9a01_send_data(handle, 0x18);
-    gc9a01_send_data(handle, 0x0F);
-    gc9a01_send_data(handle, 0x71);
-    gc9a01_send_data(handle, 0xEF);
-    gc9a01_send_data(handle, 0x70);
-    gc9a01_send_data(handle, 0x70);
-
-    gc9a01_send_cmd(handle, 0x63);
-    gc9a01_send_data(handle, 0x18);
-    gc9a01_send_data(handle, 0x11);
-    gc9a01_send_data(handle, 0x71);
-    gc9a01_send_data(handle, 0xF1);
-    gc9a01_send_data(handle, 0x70);
-    gc9a01_send_data(handle, 0x70);
-    gc9a01_send_data(handle, 0x18);
-    gc9a01_send_data(handle, 0x13);
-    gc9a01_send_data(handle, 0x71);
-    gc9a01_send_data(handle, 0xF3);
-    gc9a01_send_data(handle, 0x70);
-    gc9a01_send_data(handle, 0x70);
-
-    gc9a01_send_cmd(handle, 0x64);
-    gc9a01_send_data(handle, 0x28);
-    gc9a01_send_data(handle, 0x29);
-    gc9a01_send_data(handle, 0xF1);
-    gc9a01_send_data(handle, 0x01);
-    gc9a01_send_data(handle, 0xF1);
-    gc9a01_send_data(handle, 0x00);
-    gc9a01_send_data(handle, 0x07);
-
-    gc9a01_send_cmd(handle, 0x66);
-    gc9a01_send_data(handle, 0x3C);
-    gc9a01_send_data(handle, 0x00);
-    gc9a01_send_data(handle, 0xCD);
-    gc9a01_send_data(handle, 0x67);
-    gc9a01_send_data(handle, 0x45);
-    gc9a01_send_data(handle, 0x45);
-    gc9a01_send_data(handle, 0x10);
-    gc9a01_send_data(handle, 0x00);
-    gc9a01_send_data(handle, 0x00);
-    gc9a01_send_data(handle, 0x00);
-
-    gc9a01_send_cmd(handle, 0x67);
-    gc9a01_send_data(handle, 0x00);
-    gc9a01_send_data(handle, 0x3C);
-    gc9a01_send_data(handle, 0x00);
-    gc9a01_send_data(handle, 0x00);
-    gc9a01_send_data(handle, 0x00);
-    gc9a01_send_data(handle, 0x01);
-    gc9a01_send_data(handle, 0x54);
-    gc9a01_send_data(handle, 0x10);
-    gc9a01_send_data(handle, 0x32);
-    gc9a01_send_data(handle, 0x98);
-
-    gc9a01_send_cmd(handle, 0x74);
-    gc9a01_send_data(handle, 0x10);
-    gc9a01_send_data(handle, 0x85);
-    gc9a01_send_data(handle, 0x80);
-    gc9a01_send_data(handle, 0x00);
-    gc9a01_send_data(handle, 0x00);
-    gc9a01_send_data(handle, 0x4E);
-    gc9a01_send_data(handle, 0x00);
-
-    gc9a01_send_cmd(handle, 0x98);
-    gc9a01_send_data(handle, 0x3e);
-    gc9a01_send_data(handle, 0x07);
-
-    gc9a01_send_cmd(handle, 0x35); // Tearing Effect Line On
-    // --- Ende der vollständigen GC9A01 Init-Sequenz ---
-
-    gc9a01_send_cmd(handle, GC9A01_SLPOUT);
+    
+    // Sleep Out
+    gc9a01_send_cmd(handle, 0x11);
     vTaskDelay(pdMS_TO_TICKS(120));
     
-    gc9a01_send_cmd(handle, GC9A01_DISPON);
+    // Display ON
+    gc9a01_send_cmd(handle, 0x29);
     vTaskDelay(pdMS_TO_TICKS(20));
     
-    ESP_LOGI(TAG, "GC9A01 initialized");
+    ESP_LOGI(TAG, "GC9A01 initialized successfully!");
     return ESP_OK;
 }
 
