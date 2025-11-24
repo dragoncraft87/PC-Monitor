@@ -1,0 +1,9 @@
+list(
+  APPEND
+  PROJECT_SOURCES
+  ${CMAKE_CURRENT_LIST_DIR}/screens/screen_cpu_gen.c
+  ${CMAKE_CURRENT_LIST_DIR}/screens/screen_gpu_gen.c
+  ${CMAKE_CURRENT_LIST_DIR}/screens/screen_network_gen.c
+  ${CMAKE_CURRENT_LIST_DIR}/screens/screen_ram_gen.c
+  ${CMAKE_CURRENT_LIST_DIR}/pc_monitor_gen.c
+  ${CMAKE_CURRENT_LIST_DIR}/pc_monitor.c)

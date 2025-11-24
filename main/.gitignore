@@ -1,0 +1,8 @@
+preview-build
+preview-bin
+
+/build/
+/.vscode/
+/.devcontainer/
+/.claude/
+/Old/

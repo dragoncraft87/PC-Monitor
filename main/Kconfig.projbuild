@@ -1,0 +1,11 @@
+# Kconfig for PC Monitor Project
+
+menu "PC Monitor Configuration"
+
+    config LVGL_CONF_INCLUDE_SIMPLE
+        bool
+        default y
+        help
+            Enable simple include of lv_conf.h
+
+endmenu

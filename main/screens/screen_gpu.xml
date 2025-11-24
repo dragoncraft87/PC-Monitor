@@ -1,0 +1,61 @@
+<screen>
+	<view width="240" height="240"
+		style_bg_color="#bg_dark"
+		style_bg_opa="255"
+		style_border_width="0"
+		style_radius="120">
+
+		<!-- Arc Gauge für GPU -->
+		<lv_arc
+			x="0" y="0"
+			width="200" height="200"
+			align="center"
+			value="85"
+			rotation="0"
+			bg_start_angle="0"
+			bg_end_angle="360"
+			start_angle="0"
+			end_angle="360"
+			mode="normal"
+			style_arc_width="18"
+			style_arc_color="#bg_gray"
+			style_arc_opa="255"
+			style_arc_rounded="true"/>
+
+		<!-- Titel -->
+		<lv_label
+			text="GPU"
+			x="0" y="-45"
+			width="240"
+			align="center"
+			style_text_color="#text_gray"
+			style_text_align="center"/>
+
+		<!-- GPU Prozent (große Anzeige) -->
+		<lv_label
+			text="85%"
+			x="0" y="-5"
+			width="240"
+			align="center"
+			style_text_color="#gpu_color"
+			style_text_align="center"/>
+
+		<!-- Temperatur -->
+		<lv_label
+			text="68.3°C"
+			x="0" y="30"
+			width="240"
+			align="center"
+			style_text_color="#text_white"
+			style_text_align="center"/>
+
+		<!-- VRAM -->
+		<lv_label
+			text="4.2/8GB"
+			x="0" y="50"
+			width="240"
+			align="center"
+			style_text_color="#text_gray"
+			style_text_align="center"/>
+	</view>
+</screen>

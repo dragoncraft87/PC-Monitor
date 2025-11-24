@@ -1,0 +1,80 @@
+<screen>
+	<view width="240" height="240"
+		style_bg_color="#bg_dark"
+		style_bg_opa="255"
+		style_border_width="0"
+		style_radius="120">
+
+		<!-- Titel -->
+		<lv_label
+			text="NETWORK"
+			x="0" y="20"
+			width="240"
+			align="top_mid"
+			style_text_color="#text_white"
+			style_text_align="center"/>
+
+		<!-- Network Type -->
+		<lv_label
+			text="WiFi"
+			x="0" y="60"
+			width="240"
+			align="top_mid"
+			style_text_color="#net_color"
+			style_text_align="center"/>
+
+		<!-- Speed Label -->
+		<lv_label
+			text="Speed"
+			x="0" y="100"
+			width="240"
+			align="top_mid"
+			style_text_color="#text_gray"
+			style_text_align="center"/>
+
+		<!-- Speed Value -->
+		<lv_label
+			text="1000 Mbps"
+			x="0" y="120"
+			width="240"
+			align="top_mid"
+			style_text_color="#text_white"
+			style_text_align="center"/>
+
+		<!-- Download Label -->
+		<lv_label
+			text="Download"
+			x="-50" y="160"
+			width="100"
+			align="top_mid"
+			style_text_color="#text_gray"
+			style_text_align="center"/>
+
+		<!-- Download Value -->
+		<lv_label
+			text="25.4 MB/s"
+			x="-50" y="180"
+			width="100"
+			align="top_mid"
+			style_text_color="#net_color"
+			style_text_align="center"/>
+
+		<!-- Upload Label -->
+		<lv_label
+			text="Upload"
+			x="50" y="160"
+			width="100"
+			align="top_mid"
+			style_text_color="#text_gray"
+			style_text_align="center"/>
+
+		<!-- Upload Value -->
+		<lv_label
+			text="5.8 MB/s"
+			x="50" y="180"
+			width="100"
+			align="top_mid"
+			style_text_color="#net_color"
+			style_text_align="center"/>
+	</view>
+</screen>

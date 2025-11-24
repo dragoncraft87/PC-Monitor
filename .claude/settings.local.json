@@ -1,0 +1,9 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(idf.py reconfigure:*)"
+    ],
+    "deny": [],
+    "ask": []
+  }
+}

@@ -1,8 +1,23 @@
 # 🚀 PC Monitor - 4x GC9A01 Displays
 
-**Intelligentes PC-Monitoring Dashboard mit 4 runden Displays!**
+**Intelligentes PC-Monitoring Dashboard mit 4 runden Displays - Powered by LVGL!**
 
 Zeigt CPU, GPU, RAM und Network Stats in Echtzeit - wie das Amazon-Produkt, nur besser und selbstgebaut! 💪
+
+---
+
+## 🎨 NEUE LVGL VERSION!
+
+**Dieses Projekt wurde komplett auf LVGL umgestellt!**
+
+Die alte `graphics.c`-basierte Implementierung wurde durch eine professionelle **LVGL v9.3** UI ersetzt mit:
+- ✅ Arc Widgets für CPU/GPU Gauges
+- ✅ Bar Widget für RAM Anzeige
+- ✅ Chart Widget für Network Graph
+- ✅ PSRAM-optimiert für 4 Displays
+- ✅ Smooth Animationen & Anti-Aliasing
+
+**👉 Siehe [README_LVGL.md](README_LVGL.md) für die vollständige LVGL-Dokumentation!**
 
 ---
 
