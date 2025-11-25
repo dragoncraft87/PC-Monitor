@@ -47,7 +47,7 @@ esp_err_t lvgl_gc9a01_init(const lvgl_gc9a01_config_t *config, lvgl_gc9a01_handl
     esp_lcd_panel_io_spi_config_t io_config = {
         .dc_gpio_num = config->pin_dc,
         .cs_gpio_num = config->pin_cs,
-        .pclk_hz = 40 * 1000 * 1000,  /* 40 MHz SPI clock */
+        .pclk_hz = 20 * 1000 * 1000,  /* 40 MHz SPI clock */
         .lcd_cmd_bits = 8,
         .lcd_param_bits = 8,
         .spi_mode = 0,
@@ -61,13 +61,19 @@ esp_err_t lvgl_gc9a01_init(const lvgl_gc9a01_config_t *config, lvgl_gc9a01_handl
      * ====================================================================== */
     esp_lcd_panel_dev_config_t panel_config = {
         .reset_gpio_num = config->pin_rst,
-        .rgb_ele_order = LCD_RGB_ELEMENT_ORDER_BGR,
+        .rgb_ele_order = LCD_RGB_ELEMENT_ORDER_BGR,  // RGB Order für korrekte Farben
         .bits_per_pixel = 16,
     };
 
     ESP_ERROR_CHECK(esp_lcd_new_panel_gc9a01(io_handle, &panel_config, &handle->panel_handle));
     ESP_ERROR_CHECK(esp_lcd_panel_reset(handle->panel_handle));
     ESP_ERROR_CHECK(esp_lcd_panel_init(handle->panel_handle));
+
+    /* Display Orientierung korrigieren (gegen Spiegelung) */
+    ESP_ERROR_CHECK(esp_lcd_panel_mirror(handle->panel_handle, true, false));  // Mirror X-Achse
+    // NICHT invertieren - das macht die Farben falsch!
+    // ESP_ERROR_CHECK(esp_lcd_panel_invert_color(handle->panel_handle, true));
+
     ESP_ERROR_CHECK(esp_lcd_panel_disp_on_off(handle->panel_handle, true));
 
     /* ========================================================================

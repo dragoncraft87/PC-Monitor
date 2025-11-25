@@ -68,8 +68,8 @@ static SemaphoreHandle_t stats_mutex;
 static const lvgl_gc9a01_config_t config_cpu = {
     .pin_sck = 4,
     .pin_mosi = 5,
-    .pin_cs = 11,
-    .pin_dc = 12,
+    .pin_cs = 12,
+    .pin_dc = 11,
     .pin_rst = 13,
     .spi_host = SPI2_HOST
 };
@@ -77,26 +77,26 @@ static const lvgl_gc9a01_config_t config_cpu = {
 static const lvgl_gc9a01_config_t config_gpu = {
     .pin_sck = 4,
     .pin_mosi = 5,
-    .pin_cs = 10,
-    .pin_dc = 9,
-    .pin_rst = 46,
+    .pin_cs = 9,
+    .pin_dc = 46,
+    .pin_rst = 10,
     .spi_host = SPI2_HOST
 };
 
 static const lvgl_gc9a01_config_t config_ram = {
     .pin_sck = 4,
     .pin_mosi = 5,
-    .pin_cs = 3,
-    .pin_dc = 8,
-    .pin_rst = 18,
+    .pin_cs = 8,
+    .pin_dc = 18,
+    .pin_rst = 3,
     .spi_host = SPI2_HOST
 };
 
 static const lvgl_gc9a01_config_t config_network = {
     .pin_sck = 4,
     .pin_mosi = 5,
-    .pin_cs = 15,
-    .pin_dc = 16,
+    .pin_cs = 16,
+    .pin_dc = 15,
     .pin_rst = 17,
     .spi_host = SPI2_HOST
 };
@@ -152,16 +152,24 @@ void parse_pc_data(const char *data)
  */
 void usb_rx_task(void *arg)
 {
-    ESP_LOGI(TAG, "USB RX Task started");
+    ESP_LOGI(TAG, "USB RX Task started - waiting for data...");
+    int no_data_counter = 0;
 
     while (1) {
         int len = usb_serial_jtag_read_bytes(usb_rx_buf, USB_RX_BUF_SIZE - 1, pdMS_TO_TICKS(100));
         if (len > 0) {
             usb_rx_buf[len] = '\0';
-            ESP_LOGI(TAG, "Received: %s", usb_rx_buf);
+            ESP_LOGI(TAG, "✓ RX [%d bytes]: %s", len, usb_rx_buf);
             parse_pc_data((char *)usb_rx_buf);
+            no_data_counter = 0;  // Reset counter
+        } else {
+            no_data_counter++;
+            if (no_data_counter >= 100) {  // Alle 10 Sekunden
+                ESP_LOGW(TAG, "⚠ No data received for 10 seconds - check Python script!");
+                no_data_counter = 0;
+            }
         }
-        vTaskDelay(pdMS_TO_TICKS(10));
+        vTaskDelay(pdMS_TO_TICKS(100));
     }
 }
 
@@ -182,8 +190,14 @@ void lvgl_tick_task(void *arg)
 void lvgl_timer_task(void *arg)
 {
     while (1) {
-        lv_timer_handler();
-        vTaskDelay(pdMS_TO_TICKS(5));
+        uint32_t time_till_next = lv_timer_handler();
+
+        /* Yield to other tasks to prevent watchdog */
+        if (time_till_next > 10) {
+            vTaskDelay(pdMS_TO_TICKS(10));
+        } else {
+            vTaskDelay(pdMS_TO_TICKS(time_till_next));
+        }
     }
 }
 
@@ -193,19 +207,35 @@ void lvgl_timer_task(void *arg)
 void display_update_task(void *arg)
 {
     ESP_LOGI(TAG, "Display update task started");
+    int update_counter = 0;
 
     while (1) {
         xSemaphoreTake(stats_mutex, portMAX_DELAY);
         pc_stats_t stats_copy = pc_stats;
         xSemaphoreGive(stats_mutex);
 
-        /* Update all screens */
+        /* Debug: Log current values every 10 seconds */
+        if (update_counter % 10 == 0) {
+            ESP_LOGI(TAG, "📊 Stats: CPU=%d%% (%.1f°C), GPU=%d%% (%.1f°C), RAM=%.1f/%.1fGB",
+                     stats_copy.cpu_percent, stats_copy.cpu_temp,
+                     stats_copy.gpu_percent, stats_copy.gpu_temp,
+                     stats_copy.ram_used_gb, stats_copy.ram_total_gb);
+        }
+        update_counter++;
+
+        /* Update all screens with yield between each */
         screen_cpu_update(screen_cpu, &stats_copy);
+        vTaskDelay(pdMS_TO_TICKS(50));  /* More time between updates */
+
         screen_gpu_update(screen_gpu, &stats_copy);
+        vTaskDelay(pdMS_TO_TICKS(50));
+
         screen_ram_update(screen_ram, &stats_copy);
+        vTaskDelay(pdMS_TO_TICKS(50));
+
         screen_network_update(screen_network, &stats_copy);
 
-        vTaskDelay(pdMS_TO_TICKS(1000)); /* Update every 1 second */
+        vTaskDelay(pdMS_TO_TICKS(850)); /* Total: ~1 second */
     }
 }
 
@@ -216,6 +246,10 @@ void app_main(void)
 {
     ESP_LOGI(TAG, "=== PC Monitor 4x Display with LVGL ===");
     ESP_LOGI(TAG, "ESP32-S3 N16R8 with PSRAM");
+
+    /* Disable Task Watchdog for now (LVGL needs more time) */
+    ESP_ERROR_CHECK(esp_task_wdt_deinit());
+    ESP_LOGI(TAG, "Task Watchdog disabled for LVGL");
 
     /* Create mutex for stats */
     stats_mutex = xSemaphoreCreateMutex();
@@ -280,9 +314,9 @@ void app_main(void)
      * STEP 5: Create Tasks
      * ====================================================================== */
     xTaskCreate(lvgl_tick_task, "lvgl_tick", 2048, NULL, 10, NULL);
-    xTaskCreate(lvgl_timer_task, "lvgl_timer", 4096, NULL, 5, NULL);
+    xTaskCreatePinnedToCore(lvgl_timer_task, "lvgl_timer", 8192, NULL, 5, NULL, 1);  /* Core 1 */
     xTaskCreate(usb_rx_task, "usb_rx", 4096, NULL, 10, NULL);
-    xTaskCreate(display_update_task, "display_update", 8192, NULL, 5, NULL);
+    xTaskCreatePinnedToCore(display_update_task, "display_update", 8192, NULL, 4, NULL, 0);  /* Core 0 */
 
     ESP_LOGI(TAG, "=== System ready! ===");
 }

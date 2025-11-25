@@ -1,6 +1,3 @@
-preview-build
-preview-bin
-
 /build/
 /.vscode/
 /.devcontainer/

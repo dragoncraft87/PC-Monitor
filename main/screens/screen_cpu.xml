@@ -1,5 +1,0 @@
-<screen permanent="true">
-	<view style_bg_color="#bg_dark">
-		<gauge align="center" />
-	</view>
-</screen>
