@@ -1,7 +1,14 @@
 {
   "permissions": {
     "allow": [
-      "Bash(idf.py reconfigure:*)"
+      "Bash(idf.py reconfigure:*)",
+      "Bash(move pc_monitor_bidirectional.py pc_monitor_bidirectional.pyw)",
+      "Bash(python create_icon.py:*)",
+      "Bash(build_exe.bat)",
+      "Bash(cmd.exe /c build_exe.bat)",
+      "Bash(pip install:*)",
+      "Bash(python:*)",
+      "Bash(dir:*)"
     ],
     "deny": [],
     "ask": []
