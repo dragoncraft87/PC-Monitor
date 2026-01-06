@@ -1,213 +1,221 @@
-# 🚀 PC Monitor - 4x GC9A01 Displays
+# 🖥️ PC Monitor - 4x Display System
 
-**Intelligentes PC-Monitoring Dashboard mit 4 runden Displays - Powered by LVGL!**
+A real-time PC monitoring system with 4 round GC9A01 displays showing CPU, GPU, RAM, and Network stats. Powered by ESP32-S3 and LVGL.
 
-Zeigt CPU, GPU, RAM und Network Stats in Echtzeit - wie das Amazon-Produkt, nur besser und selbstgebaut! 💪
-
----
-
-## 🎨 NEUE LVGL VERSION!
-
-**Dieses Projekt wurde komplett auf LVGL umgestellt!**
-
-Die alte `graphics.c`-basierte Implementierung wurde durch eine professionelle **LVGL v9.3** UI ersetzt mit:
-- ✅ Arc Widgets für CPU/GPU Gauges
-- ✅ Bar Widget für RAM Anzeige
-- ✅ Chart Widget für Network Graph
-- ✅ PSRAM-optimiert für 4 Displays
-- ✅ Smooth Animationen & Anti-Aliasing
-
-**👉 Siehe [README_LVGL.md](README_LVGL.md) für die vollständige LVGL-Dokumentation!**
-
----
+![PC Monitor Setup](docs/images/setup.jpg)
+*Photo placeholder - add your build here!*
 
 ## ✨ Features
 
-### Display 1: CPU Gauge ⚡
-- Ring-Gauge (Tachometer-Style)
-- CPU Auslastung 0-100%
-- Echtzeit-Temperatur
-- Farbwechsel bei hohen Temps
+### Hardware
+- **4x GC9A01 Round Displays** (240x240px each)
+- **ESP32-S3-DevKitC N16R8** (16MB Flash, 8MB PSRAM)
+- **Real-time Updates** (1 second refresh rate)
+- **USB Powered** (no external PSU needed)
 
-### Display 2: GPU Gauge 🎮
-- Ring-Gauge für GPU %
-- GPU Temperatur
-- VRAM Nutzung (used/total GB)
-- Cyan-Blau Farbverlauf
+### Software
+- **Windows System Tray Manager** - Start/stop monitoring with one click
+- **LibreHardwareMonitor Integration** - Accurate sensor readings without external dependencies
+- **Auto-detection** - Finds ESP32 automatically
+- **Autostart Support** - Add to Windows startup easily
 
-### Display 3: RAM Bar 📊
-- Horizontaler Progress-Bar
-- GB Anzeige (used/total)
-- Segmentierter Balken
-- Farbwechsel je nach Auslastung
+## 🎯 What It Shows
 
-### Display 4: Cyberpunk Network 🌐
-- Connection Type (LAN/WiFi)
-- Link Speed (10/100/1000/2500 Mbps)
-- Live Traffic-Graph (60 Sekunden)
-- Upload/Download Speed
+| Display | Info Displayed |
+|---------|---------------|
+| **Display 1** | CPU Usage (%) + Temperature (°C) |
+| **Display 2** | GPU Usage (%) + Temperature + VRAM |
+| **Display 3** | RAM Usage (Used / Total GB) |
+| **Display 4** | Network Traffic (Download / Upload MB/s) |
 
----
+## 📸 Screenshots
 
-## 🛠️ Hardware
+*Add your screenshots here!*
 
-### Was du brauchst (HAST DU ALLES!):
+```
+[CPU Display]  [GPU Display]  [RAM Display]  [Network Display]
+     45%            72%          8.2/16 GB      ↓2.3 ↑0.5 MB/s
+    62.5°C         68.3°C
+```
 
-✅ **1x ESP32-S3-DevKitC-1** (aus Inventar ID: 1763124900393)
-✅ **4x GC9A01 1.28" Round Display** (aus Inventar ID: 1763124948807)
-✅ **Jumperkabel** (M/M, M/F - hast du reichlich)
-✅ **USB-C Kabel** für ESP32 → PC
+## 🚀 Quick Start
 
-**Optional:**
-- Breadboard zum Testen
-- 3D-gedrucktes Gehäuse
+### For End Users (Just Want to Use It)
 
----
+1. **Download** the latest `PC Monitor Manager.exe` from releases
+2. **Download** `LibreHardwareMonitorLib.dll` from [LibreHardwareMonitor releases](https://github.com/LibreHardwareMonitor/LibreHardwareMonitor/releases)
+3. **Place DLL** in the same folder as `python/pc_monitor.py`
+4. **Run** `PC Monitor Manager.exe` as Administrator
+5. **Right-click** the tray icon → "Start Monitoring"
+6. Done! Your displays should light up
 
-## 📐 Verdrahtung
+### For Developers (Want to Build It)
 
-Siehe `WIRING.md` für detaillierte Anleitung!
+See **[docs/SOFTWARE.md](docs/SOFTWARE.md)** for detailed installation and build instructions.
 
-**Quick Reference:**
+## 📦 What's Included
 
-Alle 4 Displays teilen sich:
-- SCK (GPIO 18)
-- MOSI (GPIO 23)
+```
+pc-monitor-poc/
+├── python/
+│   ├── pc_monitor.py                # Main monitoring script
+│   └── LibreHardwareMonitorLib.dll  # (Download separately)
+├── main/
+│   ├── main_lvgl.c                  # ESP32 firmware
+│   └── lv_conf.h                    # LVGL configuration
+├── docs/
+│   ├── SOFTWARE.md                  # Software setup guide
+│   └── HARDWARE.md                  # Hardware build guide
+├── pc_monitor_tray.py               # System tray manager
+├── PC Monitor Manager.spec          # PyInstaller build spec
+├── requirements.txt                 # Python dependencies
+└── README.md                        # This file
+```
 
-Jedes Display hat eigene:
-- CS (Chip Select)
-- DC (Data/Command)
-- RST (Reset)
+## 🛠️ Building From Source
 
-**Display 1 (CPU):**    CS=5,  DC=2,  RST=4
-**Display 2 (GPU):**    CS=15, DC=16, RST=17
-**Display 3 (RAM):**    CS=21, DC=22, RST=19
-**Display 4 (Network):** CS=25, DC=26, RST=27
+### Step 1: Hardware Assembly
 
----
+Follow **[docs/HARDWARE.md](docs/HARDWARE.md)** for:
+- Wiring diagrams
+- Pin connections
+- Power requirements
+- Assembly tips
 
-## 🚀 Installation
-
-### 1. ESP32 Software flashen
+### Step 2: Flash ESP32 Firmware
 
 ```bash
-cd pc-monitor-4displays
+# Install ESP-IDF (if not already installed)
+# See: https://docs.espressif.com/projects/esp-idf/en/latest/esp32s3/get-started/
 
-# Build
+# Navigate to project
+cd pc-monitor-poc
+
+# Configure and build
 idf.py build
 
-# Flash
-idf.py flash
-
-# Monitor
-idf.py monitor
+# Flash to ESP32
+idf.py -p COM3 flash monitor
 ```
 
-### 2. Python PC-Monitor starten
+### Step 3: Install Windows Manager
 
-```bash
-cd python
+See **[docs/SOFTWARE.md](docs/SOFTWARE.md)** for:
+- Python environment setup
+- Downloading LibreHardwareMonitor DLL
+- Building the EXE
+- Installation instructions
 
-# Installiere Dependencies
-pip install -r requirements.txt
+## 📋 Requirements
 
-# Starte Monitor
-python pc_monitor.py
+### Hardware
+- ESP32-S3-DevKitC N16R8 (with 8MB PSRAM!)
+- 4x GC9A01 240x240 Round Displays
+- USB-C cable
+- Breadboard + jumper wires (or custom PCB)
+
+### Software
+- **ESP32**: ESP-IDF v5.0+
+- **Windows**: Windows 10/11 (64-bit) with Administrator rights
+- **Python**: 3.8+ (for development only)
+
+## 🎮 Usage
+
+### System Tray Manager
+
+Right-click the tray icon for options:
+
+```
+┌─────────────────────────────┐
+│ Start Monitoring           │ ← Start sending data to ESP32
+│ Stop Monitoring            │ ← Stop monitoring
+├─────────────────────────────┤
+│ Add to Autostart           │ ← Run at Windows startup
+│ Remove from Autostart      │
+├─────────────────────────────┤
+│ Quit                       │ ← Close manager
+└─────────────────────────────┘
 ```
 
-Das Script findet automatisch den ESP32 USB-Port!
+**Icon Color:**
+- 🔴 Red = Monitoring stopped
+- 🟢 Green = Monitoring active
 
----
+## 🔧 Configuration
 
-## 📊 Datenformat
+### Display Layout
 
-Das Python-Script sendet jede Sekunde einen String im Format:
+Displays are connected to ESP32 via SPI:
 
-```
-CPU:45,CPUT:62.5,GPU:72,GPUT:68.3,VRAM:4.2/8.0,RAM:10.4/16.0,NET:LAN,SPEED:1000,DOWN:12.4,UP:2.1
-```
+| Display | GPIO CS | GPIO DC | GPIO RST |
+|---------|---------|---------|----------|
+| CPU     | 11      | 12      | 13       |
+| GPU     | 10      | 9       | 46       |
+| RAM     | 3       | 8       | 18       |
+| Network | 15      | 16      | 17       |
 
-Der ESP32 parsed das und aktualisiert alle 4 Displays!
+Shared pins (all displays):
+- **SCK**: GPIO 4
+- **MOSI**: GPIO 5
+- **VCC**: 3.3V
+- **GND**: GND
 
----
+### Customization
 
-## 🎨 Anpassungen
+Want to change what's displayed?
 
-### Display-Farben ändern
+1. **ESP32 Firmware**: Edit `main/main_lvgl.c`
+2. **Data Format**: Edit `python/pc_monitor.py`
+3. **Display Colors**: Modify LVGL styles in firmware
 
-In den `screen_*.c` Dateien kannst du die Farben anpassen:
+## 📚 Documentation
 
-```c
-// Beispiel: CPU Ring-Farbe ändern
-uint16_t color_start = RGB565(255, 0, 0);   // Rot
-uint16_t color_end = RGB565(255, 255, 0);   // Gelb
-```
-
-### GPIO Pins ändern
-
-In `main.c` Zeile 25-52 kannst du die Pin-Belegung anpassen.
-
-### Update-Rate ändern
-
-In `main.c` Zeile 182:
-```c
-vTaskDelay(pdMS_TO_TICKS(1000)); // 1000 = 1 Sekunde
-```
-
----
+- **[SOFTWARE.md](docs/SOFTWARE.md)** - Software installation, building EXE, usage
+- **[HARDWARE.md](docs/HARDWARE.md)** - Wiring, assembly, 3D printing files
 
 ## 🐛 Troubleshooting
 
-### "ESP32 not found"
-- Prüfe USB-Kabel
-- Installiere CP210x Treiber
-- Checke im Geräte-Manager (Windows)
+### Displays stay black
+→ Check power connections (VCC + GND to all displays)
 
-### "Displays bleiben schwarz"
-- Prüfe Verkabelung (siehe WIRING.md)
-- Prüfe 3.3V Stromversorgung
-- Checke SPI Pins (SCK, MOSI)
+### ESP32 not detected
+→ Check USB cable, try different port, verify COM port in Device Manager
 
-### "Falsche Werte"
-- Prüfe Python-Script Output
-- Checke USB Serial Verbindung
-- Monitor mit `idf.py monitor`
+### "LibreHardwareMonitor DLL not found"
+→ Download from [LibreHardwareMonitor releases](https://github.com/LibreHardwareMonitor/LibreHardwareMonitor/releases) and place `LibreHardwareMonitorLib.dll` in `python/` folder
 
-### "GPU zeigt 0%"
-- Installiere: `pip install GPUtil`
-- Nur Nvidia GPUs unterstützt
-- Für AMD: anpassen in pc_monitor.py
+### Monitoring won't start
+→ Run `PC Monitor Manager.exe` as Administrator (required for hardware sensors)
 
----
+### "Access Denied" or sensor errors
+→ LibreHardwareMonitor requires admin rights to read hardware sensors
 
-## 💡 Tipps
+## 🤝 Contributing
 
-### Mehrere PCs monitoren?
-Du hast 5 Displays! Nutze das 5. für einen zweiten PC oder als Reserve.
+Contributions welcome! Please:
 
-### Permanente Installation
-- 3D-drucke ein Gehäuse
-- Befestige Displays in Reihe oder Kreis
-- Nutze kürzere Kabel für Clean-Look
+1. Fork the repo
+2. Create a feature branch (`git checkout -b feature/amazing-feature`)
+3. Commit changes (`git commit -m 'Add amazing feature'`)
+4. Push to branch (`git push origin feature/amazing-feature`)
+5. Open a Pull Request
 
-### WiFi statt USB?
-Der ESP32-S3 hat WiFi! Du könntest das Python-Script anpassen, um Daten über WiFi zu senden.
+## 📄 License
 
----
+This project is licensed under the MIT License.
 
-## 🎯 Nächste Schritte
+## 🙏 Acknowledgments
 
-1. ✅ Hardware verkabeln (siehe WIRING.md)
-2. ✅ ESP32 flashen
-3. ✅ Python-Script starten
-4. ✅ Genießen! 🎉
+- [LVGL](https://lvgl.io/) - Embedded GUI library
+- [LibreHardwareMonitor](https://github.com/LibreHardwareMonitor/LibreHardwareMonitor) - Hardware monitoring
+- [ESP-IDF](https://github.com/espressif/esp-idf) - ESP32 framework
+- GC9A01 display drivers
 
-**Dein DIY PC Monitor ist 10x cooler als das Amazon-Ding!** 🚀
+## 💬 Support
+
+- **Issues**: [GitHub Issues](https://github.com/yourname/pc-monitor/issues)
+- **Discussions**: [GitHub Discussions](https://github.com/yourname/pc-monitor/discussions)
 
 ---
 
-## 📝 Lizenz
-
-MIT License - Do whatever you want! 
-
-Gebaut von Richard mit Hilfe von Claude 🤖
+**Made with ❤️ for PC hardware enthusiasts**

@@ -1,0 +1,16 @@
+# PC Monitor Manager - Python Dependencies
+
+# System Tray Icon
+pystray>=0.19.5
+Pillow>=10.0.0
+
+# Serial Communication
+pyserial>=3.5
+
+# System Monitoring
+psutil>=5.9.0
+gputil>=1.4.0
+WMI>=1.5.1
+
+# Build Tool
+pyinstaller>=6.0.0
