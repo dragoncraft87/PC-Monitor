@@ -8,7 +8,9 @@
       "Bash(cmd.exe /c build_exe.bat)",
       "Bash(pip install:*)",
       "Bash(python:*)",
-      "Bash(dir:*)"
+      "Bash(dir:*)",
+      "Bash(tasklist:*)",
+      "Bash(findstr:*)"
     ],
     "deny": [],
     "ask": []

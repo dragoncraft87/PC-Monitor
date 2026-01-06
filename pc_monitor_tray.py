@@ -51,9 +51,8 @@ class PCMonitorTray:
         if self.icon:
             # Update existing icon instead of creating new one
             self.icon.icon = self.create_icon_image()
-            # Force menu refresh to update enabled/disabled states
-            if hasattr(self.icon, 'update_menu'):
-                self.icon.update_menu()
+            # Recreate menu to update enabled/disabled states
+            self.icon.menu = self.create_menu()
 
     def start_monitoring(self, icon=None, item=None):
         """Start PC Monitor script"""
@@ -65,20 +64,25 @@ class PCMonitorTray:
                 print(f"ERROR: Monitor script not found at {self.monitor_script}")
                 return
 
-            # Find pythonw.exe (for no console window)
-            python_exe = sys.executable
-            if python_exe.endswith('python.exe'):
-                pythonw_exe = python_exe.replace('python.exe', 'pythonw.exe')
-                if os.path.exists(pythonw_exe):
-                    python_exe = pythonw_exe
+            # Determine Python executable
+            if getattr(sys, 'frozen', False):
+                # Running as EXE - use the bundled Python interpreter
+                python_exe = sys.executable
+            else:
+                # Running as script - prefer pythonw.exe (no console window)
+                python_exe = sys.executable
+                if python_exe.endswith('python.exe'):
+                    pythonw_exe = python_exe.replace('python.exe', 'pythonw.exe')
+                    if os.path.exists(pythonw_exe):
+                        python_exe = pythonw_exe
 
-            # Start monitor script with pythonw (no console window)
+            # Start monitor script (no console window)
             startupinfo = subprocess.STARTUPINFO()
             startupinfo.dwFlags |= subprocess.STARTF_USESHOWWINDOW
             startupinfo.wShowWindow = 0  # SW_HIDE
 
             self.monitor_process = subprocess.Popen(
-                [python_exe, str(self.monitor_script)],
+                [python_exe, str(self.monitor_script), '--silent'],
                 stdout=subprocess.DEVNULL,
                 stderr=subprocess.DEVNULL,
                 stdin=subprocess.DEVNULL,
