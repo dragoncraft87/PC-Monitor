@@ -96,20 +96,24 @@ esp_err_t lvgl_gc9a01_init(const lvgl_gc9a01_config_t *config, lvgl_gc9a01_handl
     ESP_ERROR_CHECK(esp_lcd_panel_disp_on_off(handle->panel_handle, true));
 
     /* ========================================================================
-     * STEP 3: Allocate LVGL Draw Buffers in PSRAM
+     * STEP 3: Allocate LVGL Draw Buffers
      * ====================================================================== */
-    ESP_LOGI(TAG, "Allocating draw buffers in PSRAM (%d bytes each)", GC9A01_BUF_SIZE * 2);
+    ESP_LOGI(TAG, "Allocating draw buffers...");
 
+    /* Draw buffers in PSRAM (slower but larger) */
     handle->draw_buf1 = heap_caps_malloc(GC9A01_BUF_SIZE * sizeof(lv_color_t), MALLOC_CAP_SPIRAM);
     handle->draw_buf2 = heap_caps_malloc(GC9A01_BUF_SIZE * sizeof(lv_color_t), MALLOC_CAP_SPIRAM);
-    handle->swap_buf = heap_caps_malloc(GC9A01_BUF_SIZE * sizeof(lv_color_t), MALLOC_CAP_SPIRAM);
+
+    /* Swap buffer in internal RAM (faster for byte-swap operations!) */
+    handle->swap_buf = heap_caps_malloc(GC9A01_BUF_SIZE * sizeof(lv_color_t), MALLOC_CAP_DMA | MALLOC_CAP_INTERNAL);
 
     if (!handle->draw_buf1 || !handle->draw_buf2 || !handle->swap_buf) {
-        ESP_LOGE(TAG, "Failed to allocate draw buffers in PSRAM!");
+        ESP_LOGE(TAG, "Failed to allocate draw buffers!");
         return ESP_ERR_NO_MEM;
     }
 
-    ESP_LOGI(TAG, "Draw buffers allocated: buf1=%p, buf2=%p, swap=%p",
+    ESP_LOGI(TAG, "Draw buffers allocated:");
+    ESP_LOGI(TAG, "  buf1=%p (PSRAM), buf2=%p (PSRAM), swap=%p (Internal RAM)",
              handle->draw_buf1, handle->draw_buf2, handle->swap_buf);
 
     /* ========================================================================

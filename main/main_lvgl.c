@@ -62,6 +62,9 @@ static pc_stats_t pc_stats = {
 /* Mutex for thread-safe access to pc_stats */
 static SemaphoreHandle_t stats_mutex;
 
+/* Mutex for thread-safe LVGL operations */
+static SemaphoreHandle_t lvgl_mutex;
+
 /* ============================================================================
  * GPIO PIN DEFINITIONS (Custom wiring by Richard)
  * ========================================================================== */
@@ -186,23 +189,32 @@ void lvgl_tick_task(void *arg)
 
 /**
  * @brief LVGL Timer Task - Handles LVGL internal timers
+ * Protected by mutex to prevent race conditions with display updates
  */
 void lvgl_timer_task(void *arg)
 {
     while (1) {
-        uint32_t time_till_next = lv_timer_handler();
+        /* Lock LVGL mutex before calling timer handler */
+        if (xSemaphoreTake(lvgl_mutex, pdMS_TO_TICKS(100)) == pdTRUE) {
+            uint32_t time_till_next = lv_timer_handler();
+            xSemaphoreGive(lvgl_mutex);
 
-        /* Yield to other tasks to prevent watchdog */
-        if (time_till_next > 10) {
-            vTaskDelay(pdMS_TO_TICKS(10));
+            /* Yield to other tasks to prevent watchdog */
+            if (time_till_next > 10) {
+                vTaskDelay(pdMS_TO_TICKS(10));
+            } else {
+                vTaskDelay(pdMS_TO_TICKS(time_till_next));
+            }
         } else {
-            vTaskDelay(pdMS_TO_TICKS(time_till_next));
+            /* Mutex timeout - just wait and retry */
+            vTaskDelay(pdMS_TO_TICKS(10));
         }
     }
 }
 
 /**
  * @brief Display Update Task - Updates all 4 displays
+ * All screen updates are protected by LVGL mutex to ensure consistency
  */
 void display_update_task(void *arg)
 {
@@ -210,6 +222,7 @@ void display_update_task(void *arg)
     int update_counter = 0;
 
     while (1) {
+        /* Copy stats to local variable (fast) */
         xSemaphoreTake(stats_mutex, portMAX_DELAY);
         pc_stats_t stats_copy = pc_stats;
         xSemaphoreGive(stats_mutex);
@@ -223,19 +236,16 @@ void display_update_task(void *arg)
         }
         update_counter++;
 
-        /* Update all screens with yield between each */
-        screen_cpu_update(screen_cpu, &stats_copy);
-        vTaskDelay(pdMS_TO_TICKS(50));  /* More time between updates */
+        /* Lock LVGL mutex ONCE for all screen updates to keep frame consistent */
+        if (xSemaphoreTake(lvgl_mutex, pdMS_TO_TICKS(100)) == pdTRUE) {
+            screen_cpu_update(screen_cpu, &stats_copy);
+            screen_gpu_update(screen_gpu, &stats_copy);
+            screen_ram_update(screen_ram, &stats_copy);
+            screen_network_update(screen_network, &stats_copy);
+            xSemaphoreGive(lvgl_mutex);
+        }
 
-        screen_gpu_update(screen_gpu, &stats_copy);
-        vTaskDelay(pdMS_TO_TICKS(50));
-
-        screen_ram_update(screen_ram, &stats_copy);
-        vTaskDelay(pdMS_TO_TICKS(50));
-
-        screen_network_update(screen_network, &stats_copy);
-
-        vTaskDelay(pdMS_TO_TICKS(850)); /* Total: ~1 second */
+        vTaskDelay(pdMS_TO_TICKS(1000)); /* Update every second */
     }
 }
 
@@ -251,8 +261,10 @@ void app_main(void)
     ESP_ERROR_CHECK(esp_task_wdt_deinit());
     ESP_LOGI(TAG, "Task Watchdog disabled for LVGL");
 
-    /* Create mutex for stats */
+    /* Create mutexes for thread safety */
     stats_mutex = xSemaphoreCreateMutex();
+    lvgl_mutex = xSemaphoreCreateMutex();
+    ESP_LOGI(TAG, "Mutexes created for thread-safe operation");
 
     /* ========================================================================
      * STEP 1: Configure USB Serial
