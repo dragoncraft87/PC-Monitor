@@ -8,7 +8,9 @@ block_cipher = None
 a = Analysis(
     ['pc_monitor_tray.py'],
     pathex=[],
-    binaries=[],
+    binaries=[
+        ('python/LibreHardwareMonitorLib.dll', 'python'),
+    ],
     datas=[
         ('python/pc_monitor.py', 'python'),
         ('python/__init__.py', 'python'),
@@ -24,8 +26,8 @@ a = Analysis(
         'psutil',
         'serial',
         'serial.tools.list_ports',
-        'GPUtil',
         'wmi',
+        'clr',
         'python.pc_monitor',
     ],
     hookspath=[],

@@ -13,12 +13,6 @@ import sys
 import threading
 
 try:
-    import GPUtil
-    GPU_AVAILABLE = True
-except ImportError:
-    GPU_AVAILABLE = False
-
-try:
     import wmi
     WMI_AVAILABLE = True
 except ImportError:
@@ -70,7 +64,7 @@ class PCMonitor:
                 self.hardware.IsCpuEnabled = True
                 self.hardware.IsGpuEnabled = True
                 self.hardware.Open()
-                self.log("Using LibreHardwareMonitor for temperatures")
+                self.log("Using LibreHardwareMonitor for CPU and GPU monitoring")
             except:
                 self.hardware = None
 
@@ -171,23 +165,49 @@ class PCMonitor:
         return cpu_percent, cpu_temp
 
     def get_gpu_stats(self):
-        """GPU usage, temperature and VRAM"""
-        if not GPU_AVAILABLE:
-            return 0, 0.0, 0.0, 8.0
+        """GPU usage, temperature and VRAM via LibreHardwareMonitor"""
+        gpu_percent = 0
+        gpu_temp = 0.0
+        vram_used = 0.0
+        vram_total = 8.0  # Default fallback
+
+        if not self.hardware:
+            return gpu_percent, gpu_temp, vram_used, vram_total
 
         try:
-            gpus = GPUtil.getGPUs()
-            if gpus:
-                gpu = gpus[0]
-                gpu_percent = int(gpu.load * 100)
-                gpu_temp = gpu.temperature
-                vram_used = gpu.memoryUsed / 1024
-                vram_total = gpu.memoryTotal / 1024
-                return gpu_percent, gpu_temp, vram_used, vram_total
+            for hw in self.hardware.Hardware:
+                # Check for GPU (Nvidia, AMD, or Intel)
+                if hw.HardwareType in [Hardware.HardwareType.GpuNvidia,
+                                       Hardware.HardwareType.GpuAmd,
+                                       Hardware.HardwareType.GpuIntel]:
+                    hw.Update()
+
+                    for sensor in hw.Sensors:
+                        sensor_name_lower = sensor.Name.lower()
+
+                        # GPU Load/Usage
+                        if sensor.SensorType == Hardware.SensorType.Load:
+                            if "core" in sensor_name_lower or "gpu" in sensor_name_lower:
+                                gpu_percent = int(sensor.Value or 0)
+
+                        # GPU Temperature
+                        elif sensor.SensorType == Hardware.SensorType.Temperature:
+                            if "core" in sensor_name_lower or "gpu" in sensor_name_lower:
+                                gpu_temp = float(sensor.Value or 0)
+
+                        # VRAM Usage (Data type in GB)
+                        elif sensor.SensorType == Hardware.SensorType.Data:
+                            if "memory used" in sensor_name_lower or "used" in sensor_name_lower:
+                                vram_used = float(sensor.Value or 0)
+                            elif "memory total" in sensor_name_lower or "total" in sensor_name_lower:
+                                vram_total = float(sensor.Value or 8.0)
+
+                    # Found GPU, break
+                    break
         except:
             pass
 
-        return 0, 0.0, 0.0, 8.0
+        return gpu_percent, gpu_temp, vram_used, vram_total
 
     def get_ram_stats(self):
         """RAM usage"""
