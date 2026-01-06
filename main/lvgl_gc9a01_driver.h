@@ -39,6 +39,7 @@ typedef struct {
     esp_lcd_panel_handle_t panel_handle;
     void *draw_buf1;
     void *draw_buf2;
+    void *swap_buf;  /* Temporary buffer for RGB565 byte swapping */
 } lvgl_gc9a01_handle_t;
 
 /**

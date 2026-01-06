@@ -18,18 +18,39 @@ static const char *TAG = "LVGL_GC9A01";
 
 /**
  * @brief Flush callback for LVGL
+ *
+ * Important: GC9A01 SPI LCD is big-endian, so we need to swap RGB565 byte order
+ * before sending to display (LVGL uses little-endian internally)
+ *
+ * We use a temporary swap buffer to avoid corrupting LVGL's internal buffers
  */
 static void lvgl_flush_cb(lv_display_t *disp, const lv_area_t *area, uint8_t *px_map)
 {
-    esp_lcd_panel_handle_t panel_handle = lv_display_get_user_data(disp);
+    lvgl_gc9a01_handle_t *handle = lv_display_get_user_data(disp);
+    if (!handle) {
+        lv_display_flush_ready(disp);
+        return;
+    }
 
     int offsetx1 = area->x1;
     int offsetx2 = area->x2;
     int offsety1 = area->y1;
     int offsety2 = area->y2;
 
-    // Send pixel data to display
-    esp_lcd_panel_draw_bitmap(panel_handle, offsetx1, offsety1, offsetx2 + 1, offsety2 + 1, px_map);
+    // Calculate pixel count and byte size
+    int pixel_count = (offsetx2 + 1 - offsetx1) * (offsety2 + 1 - offsety1);
+    size_t byte_size = pixel_count * sizeof(lv_color_t);
+
+    // Copy to swap buffer
+    memcpy(handle->swap_buf, px_map, byte_size);
+
+    // Swap RGB565 bytes in the temporary buffer
+    // This converts LVGL's little-endian format to display's big-endian format
+    lv_draw_sw_rgb565_swap(handle->swap_buf, pixel_count);
+
+    // Send swapped data to display
+    esp_lcd_panel_draw_bitmap(handle->panel_handle, offsetx1, offsety1,
+                              offsetx2 + 1, offsety2 + 1, handle->swap_buf);
 
     // Inform LVGL that flushing is done
     lv_display_flush_ready(disp);
@@ -61,7 +82,7 @@ esp_err_t lvgl_gc9a01_init(const lvgl_gc9a01_config_t *config, lvgl_gc9a01_handl
      * ====================================================================== */
     esp_lcd_panel_dev_config_t panel_config = {
         .reset_gpio_num = config->pin_rst,
-        .rgb_ele_order = LCD_RGB_ELEMENT_ORDER_BGR,  // RGB Order für korrekte Farben
+        .rgb_ele_order = LCD_RGB_ELEMENT_ORDER_BGR,  /* GC9A01 uses BGR order */
         .bits_per_pixel = 16,
     };
 
@@ -71,9 +92,7 @@ esp_err_t lvgl_gc9a01_init(const lvgl_gc9a01_config_t *config, lvgl_gc9a01_handl
 
     /* Display Orientierung korrigieren (gegen Spiegelung) */
     ESP_ERROR_CHECK(esp_lcd_panel_mirror(handle->panel_handle, true, false));  // Mirror X-Achse
-    // NICHT invertieren - das macht die Farben falsch!
-    // ESP_ERROR_CHECK(esp_lcd_panel_invert_color(handle->panel_handle, true));
-
+    ESP_ERROR_CHECK(esp_lcd_panel_invert_color(handle->panel_handle, true));
     ESP_ERROR_CHECK(esp_lcd_panel_disp_on_off(handle->panel_handle, true));
 
     /* ========================================================================
@@ -83,13 +102,15 @@ esp_err_t lvgl_gc9a01_init(const lvgl_gc9a01_config_t *config, lvgl_gc9a01_handl
 
     handle->draw_buf1 = heap_caps_malloc(GC9A01_BUF_SIZE * sizeof(lv_color_t), MALLOC_CAP_SPIRAM);
     handle->draw_buf2 = heap_caps_malloc(GC9A01_BUF_SIZE * sizeof(lv_color_t), MALLOC_CAP_SPIRAM);
+    handle->swap_buf = heap_caps_malloc(GC9A01_BUF_SIZE * sizeof(lv_color_t), MALLOC_CAP_SPIRAM);
 
-    if (!handle->draw_buf1 || !handle->draw_buf2) {
+    if (!handle->draw_buf1 || !handle->draw_buf2 || !handle->swap_buf) {
         ESP_LOGE(TAG, "Failed to allocate draw buffers in PSRAM!");
         return ESP_ERR_NO_MEM;
     }
 
-    ESP_LOGI(TAG, "Draw buffers allocated: buf1=%p, buf2=%p", handle->draw_buf1, handle->draw_buf2);
+    ESP_LOGI(TAG, "Draw buffers allocated: buf1=%p, buf2=%p, swap=%p",
+             handle->draw_buf1, handle->draw_buf2, handle->swap_buf);
 
     /* ========================================================================
      * STEP 4: Create LVGL Display
@@ -107,8 +128,8 @@ esp_err_t lvgl_gc9a01_init(const lvgl_gc9a01_config_t *config, lvgl_gc9a01_handl
     /* Set flush callback */
     lv_display_set_flush_cb(handle->lv_disp, lvgl_flush_cb);
 
-    /* Store panel handle as user data */
-    lv_display_set_user_data(handle->lv_disp, handle->panel_handle);
+    /* Store handle as user data (needed for swap buffer access) */
+    lv_display_set_user_data(handle->lv_disp, handle);
 
     /* Round display - enable circle cropping */
     lv_display_set_default(handle->lv_disp);
