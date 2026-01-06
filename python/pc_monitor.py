@@ -2,6 +2,7 @@
 """
 PC Monitor - Bidirectional (sends AND receives logs)
 For ESP32-S3 USB Serial JTAG
+Thread-safe version for integration with tray app
 """
 
 import time
@@ -23,13 +24,21 @@ try:
 except ImportError:
     WMI_AVAILABLE = False
 
-# Try OpenHardwareMonitor for better temperature readings
+# Try LibreHardwareMonitor for better temperature readings
 try:
     import clr
     import os
     from pathlib import Path
 
-    dll_path = Path(__file__).parent / "LibreHardwareMonitorLib.dll"
+    # Handle both regular script and PyInstaller bundle
+    if getattr(sys, 'frozen', False):
+        # Running as PyInstaller bundle
+        base_path = Path(sys._MEIPASS)
+    else:
+        # Running as script
+        base_path = Path(__file__).parent
+
+    dll_path = base_path / "LibreHardwareMonitorLib.dll"
     if dll_path.exists():
         clr.AddReference(str(dll_path))
         from LibreHardwareMonitor import Hardware
@@ -41,15 +50,20 @@ except:
 
 
 class PCMonitor:
-    def __init__(self, port=None, silent=False):
+    def __init__(self, port=None, silent=True, stop_event=None):
         self.serial_port = None
         self.wmi_interface = wmi.WMI() if WMI_AVAILABLE else None
         self.hardware = None
         self.running = True
         self.specified_port = port
         self.silent = silent  # For use with tray app (no prints)
+        self.stop_event = stop_event  # threading.Event() to signal stop
 
-        # Initialize OpenHardwareMonitor if available
+        # Threads
+        self.tx_thread = None
+        self.rx_thread = None
+
+        # Initialize LibreHardwareMonitor if available
         if OHM_AVAILABLE:
             try:
                 self.hardware = Hardware.Computer()
@@ -104,7 +118,7 @@ class PCMonitor:
         return None
 
     def get_cpu_temp_ohm(self):
-        """Get CPU temp via OpenHardwareMonitor"""
+        """Get CPU temp via LibreHardwareMonitor"""
         if not self.hardware:
             return None
 
@@ -124,7 +138,7 @@ class PCMonitor:
         """CPU usage and temperature"""
         cpu_percent = int(psutil.cpu_percent(interval=0.1))
 
-        # Try OpenHardwareMonitor first (most accurate)
+        # Try LibreHardwareMonitor first (most accurate)
         cpu_temp = self.get_cpu_temp_ohm()
 
         # Fallback to WMI
@@ -215,6 +229,10 @@ class PCMonitor:
         self.log("TX Thread started - sending data every second...")
 
         while self.running:
+            # Check stop event
+            if self.stop_event and self.stop_event.is_set():
+                break
+
             try:
                 cpu_percent, cpu_temp = self.get_cpu_stats()
                 gpu_percent, gpu_temp, vram_used, vram_total = self.get_gpu_stats()
@@ -251,6 +269,10 @@ class PCMonitor:
 
         buffer = ""
         while self.running:
+            # Check stop event
+            if self.stop_event and self.stop_event.is_set():
+                break
+
             try:
                 if self.serial_port.in_waiting > 0:
                     chunk = self.serial_port.read(self.serial_port.in_waiting).decode('utf-8', errors='ignore')
@@ -268,8 +290,8 @@ class PCMonitor:
 
             time.sleep(0.01)
 
-    def run(self):
-        """Main loop"""
+    def start(self):
+        """Start monitoring (non-blocking, for tray app)"""
         self.log("=" * 60)
         self.log("PC Monitor - Bidirectional Mode")
         self.log("=" * 60)
@@ -277,35 +299,67 @@ class PCMonitor:
 
         self.serial_port = self.find_esp32()
         if not self.serial_port:
-            self.log("\nPlease connect ESP32-S3 via USB and try again!")
-            sys.exit(1)
+            self.log("\nESP32 not found!")
+            return False
 
         self.log("\nConnected!")
         self.log("=" * 60)
         self.log("Sending PC stats every second...")
         self.log("Showing ESP32 logs below...")
-        self.log("Press Ctrl+C to stop\n")
         self.log("=" * 60)
 
         # Start both threads
-        tx_thread = threading.Thread(target=self.send_data_thread, daemon=True)
-        rx_thread = threading.Thread(target=self.receive_log_thread, daemon=True)
+        self.running = True
+        self.tx_thread = threading.Thread(target=self.send_data_thread, daemon=True)
+        self.rx_thread = threading.Thread(target=self.receive_log_thread, daemon=True)
 
-        tx_thread.start()
-        rx_thread.start()
+        self.tx_thread.start()
+        self.rx_thread.start()
+
+        return True
+
+    def stop(self):
+        """Stop monitoring (clean shutdown)"""
+        self.log("\nStopping...")
+        self.running = False
+
+        # Wait for threads to finish (max 2 seconds)
+        if self.tx_thread and self.tx_thread.is_alive():
+            self.tx_thread.join(timeout=2)
+        if self.rx_thread and self.rx_thread.is_alive():
+            self.rx_thread.join(timeout=2)
+
+        # Close serial port
+        if self.serial_port and self.serial_port.is_open:
+            self.serial_port.close()
+
+        # Close hardware monitor
+        if self.hardware:
+            self.hardware.Close()
+
+        self.log("Stopped monitoring")
+
+    def run(self):
+        """Main loop (blocking, for standalone usage)"""
+        if not self.start():
+            sys.exit(1)
 
         try:
             while self.running:
+                if self.stop_event and self.stop_event.is_set():
+                    break
                 time.sleep(0.1)
         except KeyboardInterrupt:
-            self.log("\n\nStopping...")
-            self.running = False
+            pass
         finally:
-            if self.serial_port and self.serial_port.is_open:
-                self.serial_port.close()
-            if self.hardware:
-                self.hardware.Close()
-            self.log("Closed connection")
+            self.stop()
+
+
+# Standalone function for tray app integration
+def run_monitor(stop_event, port=None):
+    """Run monitor in a thread (call this from tray app)"""
+    monitor = PCMonitor(port=port, silent=True, stop_event=stop_event)
+    monitor.run()
 
 
 if __name__ == "__main__":

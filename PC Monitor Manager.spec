@@ -1,6 +1,7 @@
 # -*- mode: python ; coding: utf-8 -*-
 # PyInstaller spec file for PC Monitor Manager
 # Builds standalone EXE with UAC admin rights
+# Threading-based approach (no subprocess)
 
 block_cipher = None
 
@@ -10,6 +11,7 @@ a = Analysis(
     binaries=[],
     datas=[
         ('python/pc_monitor.py', 'python'),
+        ('python/__init__.py', 'python'),
         ('icon.ico', '.'),
     ],
     hiddenimports=[
@@ -18,8 +20,13 @@ a = Analysis(
         'PIL.Image',
         'PIL.ImageDraw',
         'winreg',
-        'subprocess',
         'threading',
+        'psutil',
+        'serial',
+        'serial.tools.list_ports',
+        'GPUtil',
+        'wmi',
+        'python.pc_monitor',
     ],
     hookspath=[],
     hooksconfig={},
@@ -54,6 +61,6 @@ exe = EXE(
     codesign_identity=None,
     entitlements_file=None,
     icon='icon.ico',
-    uac_admin=True,  # Request administrator privileges (required for LibreHardwareMonitor)
+    uac_admin=True,  # Request administrator privileges (required for hardware monitoring)
     uac_uiaccess=False,
 )

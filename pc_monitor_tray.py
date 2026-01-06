@@ -1,34 +1,30 @@
 #!/usr/bin/env python3
 """
 PC Monitor Manager - System Tray Application
-Manages PC Monitor script via taskbar icon
+Manages PC Monitor via threading (no subprocess)
 """
 
 import os
 import sys
-import subprocess
 import winreg
 from pathlib import Path
 import pystray
 from PIL import Image, ImageDraw
 import threading
-import time
+
+# Add python directory to path for imports
+sys.path.insert(0, str(Path(__file__).parent / "python"))
+
+# Import monitor module
+from python.pc_monitor import PCMonitor
 
 
 class PCMonitorTray:
     def __init__(self):
         self.icon = None
-        self.monitor_process = None
+        self.monitor = None
+        self.monitor_thread = None
         self.running = False
-
-        # Path to monitor script
-        if getattr(sys, 'frozen', False):
-            # Running as EXE - use bundled script
-            base_path = Path(sys._MEIPASS)
-            self.monitor_script = base_path / "python" / "pc_monitor.py"
-        else:
-            # Running as script
-            self.monitor_script = Path(__file__).parent / "python" / "pc_monitor.py"
 
     def create_icon_image(self):
         """Create taskbar icon (green=running, red=stopped)"""
@@ -55,65 +51,38 @@ class PCMonitorTray:
             self.icon.menu = self.create_menu()
 
     def start_monitoring(self, icon=None, item=None):
-        """Start PC Monitor script"""
+        """Start PC Monitor in thread"""
         if self.running:
             return
 
         try:
-            if not self.monitor_script.exists():
-                print(f"ERROR: Monitor script not found at {self.monitor_script}")
-                return
+            # Create monitor instance
+            self.monitor = PCMonitor(port=None, silent=True)
 
-            # Determine Python executable
-            if getattr(sys, 'frozen', False):
-                # Running as EXE - use the bundled Python interpreter
-                python_exe = sys.executable
+            # Try to start (connects to ESP32)
+            if self.monitor.start():
+                self.running = True
+                self.update_icon()
             else:
-                # Running as script - prefer pythonw.exe (no console window)
-                python_exe = sys.executable
-                if python_exe.endswith('python.exe'):
-                    pythonw_exe = python_exe.replace('python.exe', 'pythonw.exe')
-                    if os.path.exists(pythonw_exe):
-                        python_exe = pythonw_exe
-
-            # Start monitor script (no console window)
-            startupinfo = subprocess.STARTUPINFO()
-            startupinfo.dwFlags |= subprocess.STARTF_USESHOWWINDOW
-            startupinfo.wShowWindow = 0  # SW_HIDE
-
-            self.monitor_process = subprocess.Popen(
-                [python_exe, str(self.monitor_script), '--silent'],
-                stdout=subprocess.DEVNULL,
-                stderr=subprocess.DEVNULL,
-                stdin=subprocess.DEVNULL,
-                startupinfo=startupinfo,
-                creationflags=subprocess.CREATE_NO_WINDOW | subprocess.DETACHED_PROCESS
-            )
-
-            self.running = True
-            self.update_icon()
-            print("PC Monitor started")
+                # Failed to connect to ESP32
+                self.monitor = None
 
         except Exception as e:
             print(f"ERROR: Failed to start monitoring: {e}")
+            self.monitor = None
 
     def stop_monitoring(self, icon=None, item=None):
-        """Stop PC Monitor script"""
+        """Stop PC Monitor"""
         if not self.running:
             return
 
         try:
-            if self.monitor_process:
-                self.monitor_process.terminate()
-                try:
-                    self.monitor_process.wait(timeout=5)
-                except subprocess.TimeoutExpired:
-                    self.monitor_process.kill()
-                self.monitor_process = None
+            if self.monitor:
+                self.monitor.stop()
+                self.monitor = None
 
             self.running = False
             self.update_icon()
-            print("PC Monitor stopped")
 
         except Exception as e:
             print(f"ERROR: Failed to stop monitoring: {e}")
@@ -196,24 +165,8 @@ class PCMonitorTray:
             )
         )
 
-    def monitor_process_thread(self):
-        """Monitor the monitor process and update icon if it crashes"""
-        while True:
-            if self.running and self.monitor_process:
-                if self.monitor_process.poll() is not None:
-                    # Process exited
-                    print("PC Monitor process exited unexpectedly")
-                    self.running = False
-                    self.update_icon()
-
-            time.sleep(1)
-
     def run(self):
         """Start system tray icon"""
-        # Start monitor thread
-        monitor_thread = threading.Thread(target=self.monitor_process_thread, daemon=True)
-        monitor_thread.start()
-
         # Create icon (only ONE icon)
         self.icon = pystray.Icon(
             "pc_monitor_manager",
