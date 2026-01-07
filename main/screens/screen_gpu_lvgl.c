@@ -59,33 +59,52 @@ screen_gpu_t *screen_gpu_create(lv_display_t *disp)
      * CENTER LABELS
      * ====================================================================== */
 
-    /* GPU Model Title */
+    /* GPU Model Title - Top (matching SquareLine: Y=-45) */
     s->label_title = lv_label_create(s->screen);
-    lv_label_set_text(s->label_title, "RTX 3080 Ti");
-    lv_obj_set_style_text_font(s->label_title, &lv_font_montserrat_16, 0);
-    lv_obj_set_style_text_color(s->label_title, lv_color_hex(0xCCCCCC), 0);
-    lv_obj_align(s->label_title, LV_ALIGN_CENTER, 0, -50);
+    lv_obj_set_width(s->label_title, LV_SIZE_CONTENT);
+    lv_obj_set_height(s->label_title, LV_SIZE_CONTENT);
+    lv_obj_set_x(s->label_title, 0);
+    lv_obj_set_y(s->label_title, -45);
+    lv_obj_set_align(s->label_title, LV_ALIGN_CENTER);
+    lv_label_set_text(s->label_title, "3080 Ti");
+    lv_obj_set_style_text_align(s->label_title, LV_TEXT_ALIGN_CENTER, LV_PART_MAIN | LV_STATE_DEFAULT);
+    lv_obj_set_style_text_font(s->label_title, &lv_font_montserrat_16, LV_PART_MAIN | LV_STATE_DEFAULT);
 
-    /* Percentage Value - Center Top */
+    /* Percentage Value - Center */
     s->label_percent = lv_label_create(s->screen);
-    lv_label_set_text(s->label_percent, "0%");
-    lv_obj_set_style_text_font(s->label_percent, &lv_font_montserrat_42, 0);
-    lv_obj_set_style_text_color(s->label_percent, lv_color_white(), 0);
-    lv_obj_align(s->label_percent, LV_ALIGN_CENTER, 0, -8);
+    lv_obj_set_width(s->label_percent, LV_SIZE_CONTENT);
+    lv_obj_set_height(s->label_percent, LV_SIZE_CONTENT);
+    lv_obj_set_align(s->label_percent, LV_ALIGN_CENTER);
+    lv_label_set_text(s->label_percent, "XX%");
+    lv_obj_set_style_text_color(s->label_percent, lv_color_hex(0xFFFFFF), LV_PART_MAIN | LV_STATE_DEFAULT);
+    lv_obj_set_style_text_opa(s->label_percent, 255, LV_PART_MAIN | LV_STATE_DEFAULT);
+    lv_obj_set_style_text_align(s->label_percent, LV_TEXT_ALIGN_CENTER, LV_PART_MAIN | LV_STATE_DEFAULT);
+    lv_obj_set_style_text_font(s->label_percent, &lv_font_montserrat_42, LV_PART_MAIN | LV_STATE_DEFAULT);
 
-    /* VRAM - Center (bigger font, more space) */
+    /* VRAM - Center (matching SquareLine: Y=38, Font=22) */
     s->label_vram = lv_label_create(s->screen);
-    lv_label_set_text(s->label_vram, "0/12GB");
-    lv_obj_set_style_text_font(s->label_vram, &lv_font_montserrat_20, 0);
-    lv_obj_set_style_text_color(s->label_vram, lv_color_hex(0x4CAF50), 0);
-    lv_obj_align(s->label_vram, LV_ALIGN_CENTER, 0, 30);
+    lv_obj_set_width(s->label_vram, LV_SIZE_CONTENT);
+    lv_obj_set_height(s->label_vram, LV_SIZE_CONTENT);
+    lv_obj_set_x(s->label_vram, 0);
+    lv_obj_set_y(s->label_vram, 38);
+    lv_obj_set_align(s->label_vram, LV_ALIGN_CENTER);
+    lv_label_set_text(s->label_vram, "12 / 12 GB");
+    lv_obj_set_style_text_color(s->label_vram, lv_color_hex(0x4CAF50), LV_PART_MAIN | LV_STATE_DEFAULT);
+    lv_obj_set_style_text_opa(s->label_vram, 255, LV_PART_MAIN | LV_STATE_DEFAULT);
+    lv_obj_set_style_text_font(s->label_vram, &lv_font_montserrat_22, LV_PART_MAIN | LV_STATE_DEFAULT);
 
-    /* Temperature - Bottom */
+    /* Temperature - Bottom (matching SquareLine: Y=70) */
     s->label_temp = lv_label_create(s->screen);
-    lv_label_set_text(s->label_temp, "0C");
-    lv_obj_set_style_text_font(s->label_temp, &lv_font_montserrat_34, 0);
-    lv_obj_set_style_text_color(s->label_temp, lv_color_hex(0xFF6B6B), 0);
-    lv_obj_align(s->label_temp, LV_ALIGN_CENTER, 0, 70);
+    lv_obj_set_width(s->label_temp, LV_SIZE_CONTENT);
+    lv_obj_set_height(s->label_temp, LV_SIZE_CONTENT);
+    lv_obj_set_x(s->label_temp, 0);
+    lv_obj_set_y(s->label_temp, 70);
+    lv_obj_set_align(s->label_temp, LV_ALIGN_CENTER);
+    lv_label_set_text(s->label_temp, "XX°C");
+    lv_obj_set_style_text_color(s->label_temp, lv_color_hex(0xF40B0B), LV_PART_MAIN | LV_STATE_DEFAULT);
+    lv_obj_set_style_text_opa(s->label_temp, 255, LV_PART_MAIN | LV_STATE_DEFAULT);
+    lv_obj_set_style_text_align(s->label_temp, LV_TEXT_ALIGN_CENTER, LV_PART_MAIN | LV_STATE_DEFAULT);
+    lv_obj_set_style_text_font(s->label_temp, &lv_font_montserrat_34, LV_PART_MAIN | LV_STATE_DEFAULT);
 
     /* Load screen to this display */
     lv_screen_load(s->screen);
@@ -110,9 +129,9 @@ void screen_gpu_update(screen_gpu_t *s, const pc_stats_t *stats)
     snprintf(buf, sizeof(buf), "%d%%", stats->gpu_percent);
     lv_label_set_text(s->label_percent, buf);
 
-    /* Update VRAM (12GB total) */
-    char vram_buf[16];
-    snprintf(vram_buf, sizeof(vram_buf), "%.1f/12GB", stats->gpu_vram_used);
+    /* Update VRAM (matching SquareLine format: "X / 12 GB") */
+    char vram_buf[20];
+    snprintf(vram_buf, sizeof(vram_buf), "%.1f / 12 GB", stats->gpu_vram_used);
     lv_label_set_text(s->label_vram, vram_buf);
 
     /* Update temperature (no decimals) */

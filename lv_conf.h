@@ -64,7 +64,7 @@ void *lv_custom_realloc(void *ptr, size_t size);
 #define LV_FONT_MONTSERRAT_16 1
 #define LV_FONT_MONTSERRAT_18 0
 #define LV_FONT_MONTSERRAT_20 1
-#define LV_FONT_MONTSERRAT_22 0
+#define LV_FONT_MONTSERRAT_22 1
 #define LV_FONT_MONTSERRAT_24 1
 #define LV_FONT_MONTSERRAT_26 0
 #define LV_FONT_MONTSERRAT_28 0

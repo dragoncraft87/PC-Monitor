@@ -77,16 +77,16 @@ screen_cpu_t *screen_cpu_create(lv_display_t *disp)
      * CENTER LABELS - SquareLine Studio Design
      * ====================================================================== */
 
-    /* CPU Model Title - Top (Y offset -50) */
+    /* CPU Model Title - Top (Y offset -45, matching SquareLine) */
     s->label_title = lv_label_create(s->screen);
     lv_obj_set_width(s->label_title, LV_SIZE_CONTENT);
     lv_obj_set_height(s->label_title, LV_SIZE_CONTENT);
+    lv_obj_set_x(s->label_title, 0);
+    lv_obj_set_y(s->label_title, -45);
     lv_obj_set_align(s->label_title, LV_ALIGN_CENTER);
-    lv_obj_set_pos(s->label_title, 0, -50);
     lv_label_set_text(s->label_title, "i9-7980XE");
-    lv_obj_set_style_text_align(s->label_title, LV_TEXT_ALIGN_CENTER, LV_PART_MAIN);
-    lv_obj_set_style_text_color(s->label_title, lv_color_hex(0xCCCCCC), LV_PART_MAIN);
-    lv_obj_set_style_text_font(s->label_title, &lv_font_montserrat_16, LV_PART_MAIN);
+    lv_obj_set_style_text_align(s->label_title, LV_TEXT_ALIGN_CENTER, LV_PART_MAIN | LV_STATE_DEFAULT);
+    lv_obj_set_style_text_font(s->label_title, &lv_font_montserrat_16, LV_PART_MAIN | LV_STATE_DEFAULT);
 
     /* Percentage Value - Center (Y offset 0) */
     s->label_percent = lv_label_create(s->screen);
