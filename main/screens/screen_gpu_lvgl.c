@@ -45,11 +45,13 @@ screen_gpu_t *screen_gpu_create(lv_display_t *disp)
     lv_arc_set_bg_angles(s->arc, 135, 45);
     lv_arc_set_rotation(s->arc, 0);
 
-    /* Styling - Cyan gradient */
-    lv_obj_set_style_arc_width(s->arc, 18, LV_PART_MAIN);
-    lv_obj_set_style_arc_width(s->arc, 18, LV_PART_INDICATOR);
-    lv_obj_set_style_arc_color(s->arc, lv_color_make(0x22, 0x22, 0x22), LV_PART_MAIN);
-    lv_obj_set_style_arc_color(s->arc, lv_color_make(0x4c, 0xc9, 0xf0), LV_PART_INDICATOR);
+    /* Styling - NVIDIA Green (matching Intel Blue style) */
+    lv_obj_set_style_arc_width(s->arc, 20, LV_PART_MAIN);
+    lv_obj_set_style_arc_width(s->arc, 20, LV_PART_INDICATOR);
+    lv_obj_set_style_arc_color(s->arc, lv_color_hex(0x55555C), LV_PART_MAIN);
+    lv_obj_set_style_arc_color(s->arc, lv_color_hex(0x76B900), LV_PART_INDICATOR);  /* NVIDIA Green */
+    lv_obj_set_style_arc_rounded(s->arc, false, LV_PART_MAIN);
+    lv_obj_set_style_arc_rounded(s->arc, false, LV_PART_INDICATOR);
 
     lv_obj_set_style_bg_opa(s->arc, 0, LV_PART_KNOB);
 
@@ -57,33 +59,33 @@ screen_gpu_t *screen_gpu_create(lv_display_t *disp)
      * CENTER LABELS
      * ====================================================================== */
 
-    /* "GPU" Title */
+    /* GPU Model Title */
     s->label_title = lv_label_create(s->screen);
-    lv_label_set_text(s->label_title, "GPU");
-    lv_obj_set_style_text_font(s->label_title, &lv_font_montserrat_14, 0);
-    lv_obj_set_style_text_color(s->label_title, lv_color_make(0x88, 0x88, 0x88), 0);
-    lv_obj_align(s->label_title, LV_ALIGN_CENTER, 0, -40);
+    lv_label_set_text(s->label_title, "RTX 3080 Ti");
+    lv_obj_set_style_text_font(s->label_title, &lv_font_montserrat_16, 0);
+    lv_obj_set_style_text_color(s->label_title, lv_color_hex(0xCCCCCC), 0);
+    lv_obj_align(s->label_title, LV_ALIGN_CENTER, 0, -50);
 
-    /* Percentage Value */
+    /* Percentage Value - Center Top */
     s->label_percent = lv_label_create(s->screen);
     lv_label_set_text(s->label_percent, "0%");
     lv_obj_set_style_text_font(s->label_percent, &lv_font_montserrat_42, 0);
     lv_obj_set_style_text_color(s->label_percent, lv_color_white(), 0);
     lv_obj_align(s->label_percent, LV_ALIGN_CENTER, 0, -8);
 
-    /* Temperature */
-    s->label_temp = lv_label_create(s->screen);
-    lv_label_set_text(s->label_temp, "0.0C");
-    lv_obj_set_style_text_font(s->label_temp, &lv_font_montserrat_16, 0);
-    lv_obj_set_style_text_color(s->label_temp, lv_color_make(0xff, 0x6b, 0x6b), 0);
-    lv_obj_align(s->label_temp, LV_ALIGN_CENTER, 0, 23);
-
-    /* VRAM */
+    /* VRAM - Center (bigger font, more space) */
     s->label_vram = lv_label_create(s->screen);
-    lv_label_set_text(s->label_vram, "0/8GB");
-    lv_obj_set_style_text_font(s->label_vram, &lv_font_montserrat_14, 0);
-    lv_obj_set_style_text_color(s->label_vram, lv_color_make(0x4c, 0xaf, 0x50), 0);
-    lv_obj_align(s->label_vram, LV_ALIGN_CENTER, 0, 42);
+    lv_label_set_text(s->label_vram, "0/12GB");
+    lv_obj_set_style_text_font(s->label_vram, &lv_font_montserrat_20, 0);
+    lv_obj_set_style_text_color(s->label_vram, lv_color_hex(0x4CAF50), 0);
+    lv_obj_align(s->label_vram, LV_ALIGN_CENTER, 0, 30);
+
+    /* Temperature - Bottom */
+    s->label_temp = lv_label_create(s->screen);
+    lv_label_set_text(s->label_temp, "0C");
+    lv_obj_set_style_text_font(s->label_temp, &lv_font_montserrat_34, 0);
+    lv_obj_set_style_text_color(s->label_temp, lv_color_hex(0xFF6B6B), 0);
+    lv_obj_align(s->label_temp, LV_ALIGN_CENTER, 0, 70);
 
     /* Load screen to this display */
     lv_screen_load(s->screen);
@@ -108,24 +110,24 @@ void screen_gpu_update(screen_gpu_t *s, const pc_stats_t *stats)
     snprintf(buf, sizeof(buf), "%d%%", stats->gpu_percent);
     lv_label_set_text(s->label_percent, buf);
 
-    /* Update temperature */
+    /* Update VRAM (12GB total) */
+    char vram_buf[16];
+    snprintf(vram_buf, sizeof(vram_buf), "%.1f/12GB", stats->gpu_vram_used);
+    lv_label_set_text(s->label_vram, vram_buf);
+
+    /* Update temperature (no decimals) */
     char temp_buf[16];
-    snprintf(temp_buf, sizeof(temp_buf), "%.1fC", stats->gpu_temp);
+    snprintf(temp_buf, sizeof(temp_buf), "%d°C", (int)stats->gpu_temp);
     lv_label_set_text(s->label_temp, temp_buf);
 
     /* Temperature color */
     lv_color_t temp_color;
     if (stats->gpu_temp > 75.0f) {
-        temp_color = lv_color_make(0xff, 0x44, 0x44);
+        temp_color = lv_color_hex(0xFF4444);
     } else if (stats->gpu_temp > 65.0f) {
-        temp_color = lv_color_make(0xff, 0x6b, 0x6b);
+        temp_color = lv_color_hex(0xFF6B6B);
     } else {
-        temp_color = lv_color_make(0x4c, 0xaf, 0x50);
+        temp_color = lv_color_hex(0x4CAF50);
     }
     lv_obj_set_style_text_color(s->label_temp, temp_color, 0);
-
-    /* Update VRAM */
-    char vram_buf[16];
-    snprintf(vram_buf, sizeof(vram_buf), "%.1f/%.0fGB", stats->gpu_vram_used, stats->gpu_vram_total);
-    lv_label_set_text(s->label_vram, vram_buf);
 }

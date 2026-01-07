@@ -23,11 +23,16 @@
 #define LV_MEM_CUSTOM 1
 #define LV_MEM_SIZE (128 * 1024U)  /* 128 KB for LVGL internal memory */
 
-/* Custom memory allocator to use PSRAM */
-#define LV_MEM_CUSTOM_INCLUDE <stdlib.h>
-#define LV_MEM_CUSTOM_ALLOC   malloc
-#define LV_MEM_CUSTOM_FREE    free
-#define LV_MEM_CUSTOM_REALLOC realloc
+/* Custom memory allocator to prefer PSRAM (defined in main_lvgl.c) */
+#define LV_MEM_CUSTOM_INCLUDE "esp_heap_caps.h"
+#define LV_MEM_CUSTOM_ALLOC   lv_custom_malloc
+#define LV_MEM_CUSTOM_FREE    lv_custom_free
+#define LV_MEM_CUSTOM_REALLOC lv_custom_realloc
+
+/* Forward declarations for custom allocators */
+void *lv_custom_malloc(size_t size);
+void lv_custom_free(void *ptr);
+void *lv_custom_realloc(void *ptr, size_t size);
 
 /* ============================================================================
  * DISPLAY SETTINGS

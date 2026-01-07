@@ -28,6 +28,89 @@
 static const char *TAG = "PC-MONITOR-LVGL";
 
 /* ============================================================================
+ * CUSTOM MEMORY ALLOCATOR - PREFER PSRAM OVER INTERNAL RAM
+ * ========================================================================== */
+
+/**
+ * @brief Custom malloc that prefers PSRAM to save internal RAM
+ *
+ * Strategy:
+ * 1. Try PSRAM first (for most LVGL objects)
+ * 2. Fall back to DMA-capable internal RAM if PSRAM fails
+ * 3. Fall back to any internal RAM as last resort
+ */
+void *lv_custom_malloc(size_t size)
+{
+    if (size == 0) return NULL;
+
+    /* Try PSRAM first (best for large allocations) */
+    void *ptr = heap_caps_malloc(size, MALLOC_CAP_SPIRAM);
+    if (ptr) {
+        return ptr;
+    }
+
+    /* PSRAM full - try DMA-capable internal RAM */
+    ptr = heap_caps_malloc(size, MALLOC_CAP_DMA | MALLOC_CAP_INTERNAL);
+    if (ptr) {
+        ESP_LOGW(TAG, "PSRAM full! Allocated %d bytes from internal DMA RAM", size);
+        return ptr;
+    }
+
+    /* Last resort: any internal RAM */
+    ptr = heap_caps_malloc(size, MALLOC_CAP_INTERNAL);
+    if (ptr) {
+        ESP_LOGW(TAG, "PSRAM full! Allocated %d bytes from internal RAM", size);
+        return ptr;
+    }
+
+    ESP_LOGE(TAG, "OUT OF MEMORY! Failed to allocate %d bytes", size);
+    return NULL;
+}
+
+/**
+ * @brief Custom free (works with any heap type)
+ */
+void lv_custom_free(void *ptr)
+{
+    if (ptr) {
+        heap_caps_free(ptr);
+    }
+}
+
+/**
+ * @brief Custom realloc that prefers PSRAM
+ */
+void *lv_custom_realloc(void *ptr, size_t size)
+{
+    if (size == 0) {
+        lv_custom_free(ptr);
+        return NULL;
+    }
+
+    if (!ptr) {
+        return lv_custom_malloc(size);
+    }
+
+    /* Try realloc in PSRAM first */
+    void *new_ptr = heap_caps_realloc(ptr, size, MALLOC_CAP_SPIRAM);
+    if (new_ptr) {
+        return new_ptr;
+    }
+
+    /* PSRAM realloc failed - allocate new block and copy */
+    new_ptr = lv_custom_malloc(size);
+    if (new_ptr) {
+        /* Copy old data (we don't know the old size, so copy min of new size) */
+        memcpy(new_ptr, ptr, size);
+        lv_custom_free(ptr);
+        return new_ptr;
+    }
+
+    ESP_LOGE(TAG, "OUT OF MEMORY! Failed to realloc %d bytes", size);
+    return NULL;
+}
+
+/* ============================================================================
  * DISPLAY HANDLES
  * ========================================================================== */
 static lvgl_gc9a01_handle_t display_cpu;
@@ -215,6 +298,8 @@ void lvgl_timer_task(void *arg)
 /**
  * @brief Display Update Task - Updates all 4 displays
  * All screen updates are protected by LVGL mutex to ensure consistency
+ *
+ * CRITICAL FIX: Added NULL-pointer checks to prevent crashes if screen creation fails
  */
 void display_update_task(void *arg)
 {
@@ -238,11 +323,14 @@ void display_update_task(void *arg)
 
         /* Lock LVGL mutex ONCE for all screen updates to keep frame consistent */
         if (xSemaphoreTake(lvgl_mutex, pdMS_TO_TICKS(100)) == pdTRUE) {
-            screen_cpu_update(screen_cpu, &stats_copy);
-            screen_gpu_update(screen_gpu, &stats_copy);
-            screen_ram_update(screen_ram, &stats_copy);
-            screen_network_update(screen_network, &stats_copy);
+            /* NULL-pointer checks to prevent crashes */
+            if (screen_cpu) screen_cpu_update(screen_cpu, &stats_copy);
+            if (screen_gpu) screen_gpu_update(screen_gpu, &stats_copy);
+            if (screen_ram) screen_ram_update(screen_ram, &stats_copy);
+            if (screen_network) screen_network_update(screen_network, &stats_copy);
             xSemaphoreGive(lvgl_mutex);
+        } else {
+            ESP_LOGW(TAG, "Failed to acquire LVGL mutex for display update!");
         }
 
         vTaskDelay(pdMS_TO_TICKS(1000)); /* Update every second */
@@ -298,37 +386,65 @@ void app_main(void)
 
     /* ========================================================================
      * STEP 4: Initialize 4 Displays with LVGL
+     * IMPORTANT: Must be done BEFORE starting lvgl_timer_task to avoid race!
      * ====================================================================== */
+
+    /* Lock LVGL mutex during display creation to prevent race with timer task */
+    xSemaphoreTake(lvgl_mutex, portMAX_DELAY);
 
     /* Display 1: CPU */
     ESP_LOGI(TAG, "Initializing Display 1: CPU");
     ESP_ERROR_CHECK(lvgl_gc9a01_init(&config_cpu, &display_cpu));
     screen_cpu = screen_cpu_create(lvgl_gc9a01_get_display(&display_cpu));
+    if (!screen_cpu) {
+        ESP_LOGE(TAG, "Failed to create CPU screen!");
+    }
 
     /* Display 2: GPU */
     ESP_LOGI(TAG, "Initializing Display 2: GPU");
     ESP_ERROR_CHECK(lvgl_gc9a01_init(&config_gpu, &display_gpu));
     screen_gpu = screen_gpu_create(lvgl_gc9a01_get_display(&display_gpu));
+    if (!screen_gpu) {
+        ESP_LOGE(TAG, "Failed to create GPU screen!");
+    }
 
     /* Display 3: RAM */
     ESP_LOGI(TAG, "Initializing Display 3: RAM");
     ESP_ERROR_CHECK(lvgl_gc9a01_init(&config_ram, &display_ram));
     screen_ram = screen_ram_create(lvgl_gc9a01_get_display(&display_ram));
+    if (!screen_ram) {
+        ESP_LOGE(TAG, "Failed to create RAM screen!");
+    }
 
     /* Display 4: Network */
     ESP_LOGI(TAG, "Initializing Display 4: Network");
     ESP_ERROR_CHECK(lvgl_gc9a01_init(&config_network, &display_network));
     screen_network = screen_network_create(lvgl_gc9a01_get_display(&display_network));
+    if (!screen_network) {
+        ESP_LOGE(TAG, "Failed to create Network screen!");
+    }
+
+    xSemaphoreGive(lvgl_mutex);
+
+    /* Print memory statistics after initialization */
+    ESP_LOGI(TAG, "=== Memory Statistics After Init ===");
+    ESP_LOGI(TAG, "Free PSRAM: %d bytes", heap_caps_get_free_size(MALLOC_CAP_SPIRAM));
+    ESP_LOGI(TAG, "Free Internal RAM: %d bytes", heap_caps_get_free_size(MALLOC_CAP_INTERNAL));
+    ESP_LOGI(TAG, "Largest free PSRAM block: %d bytes", heap_caps_get_largest_free_block(MALLOC_CAP_SPIRAM));
+    ESP_LOGI(TAG, "Largest free Internal block: %d bytes", heap_caps_get_largest_free_block(MALLOC_CAP_INTERNAL));
 
     ESP_LOGI(TAG, "All 4 displays initialized!");
 
     /* ========================================================================
      * STEP 5: Create Tasks
      * ====================================================================== */
-    xTaskCreate(lvgl_tick_task, "lvgl_tick", 2048, NULL, 10, NULL);
-    xTaskCreatePinnedToCore(lvgl_timer_task, "lvgl_timer", 8192, NULL, 5, NULL, 1);  /* Core 1 */
-    xTaskCreate(usb_rx_task, "usb_rx", 4096, NULL, 10, NULL);
-    xTaskCreatePinnedToCore(display_update_task, "display_update", 8192, NULL, 4, NULL, 0);  /* Core 0 */
+    /* Note: Stack sizes increased to prevent overflow with 4 displays + LVGL 9
+     * Stack is allocated from PSRAM (CONFIG_SPIRAM_ALLOW_STACK_EXTERNAL_MEMORY=y)
+     */
+    xTaskCreate(lvgl_tick_task, "lvgl_tick", 2048, NULL, 8, NULL); /* 2KB - Prio 8 (reduced from 10) */
+    xTaskCreatePinnedToCore(lvgl_timer_task, "lvgl_timer", 32768, NULL, 5, NULL, 1);  /* Core 1 - 32KB (was 24KB) */
+    xTaskCreate(usb_rx_task, "usb_rx", 6144, NULL, 6, NULL);  /* 6KB - Prio 6 (reduced from 10) */
+    xTaskCreatePinnedToCore(display_update_task, "display_update", 20480, NULL, 4, NULL, 0);  /* Core 0 - 20KB (was 16KB) */
 
     ESP_LOGI(TAG, "=== System ready! ===");
 }

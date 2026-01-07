@@ -14,7 +14,7 @@ static const char *TAG = "LVGL_GC9A01";
 
 #define GC9A01_WIDTH  240
 #define GC9A01_HEIGHT 240
-#define GC9A01_BUF_SIZE (GC9A01_WIDTH * 40) /* 40 lines buffer */
+#define GC9A01_BUF_SIZE (GC9A01_WIDTH * 60) /* 60 lines buffer (240×60 = 14400 pixels = 28.8KB per buffer, 3 buffers = 86.4KB per display) */
 
 /**
  * @brief Flush callback for LVGL
@@ -23,12 +23,15 @@ static const char *TAG = "LVGL_GC9A01";
  * before sending to display (LVGL uses little-endian internally)
  *
  * We use a temporary swap buffer to avoid corrupting LVGL's internal buffers
+ *
+ * CRITICAL FIX: Added error handling and bounds checking to prevent crashes
  */
 static void lvgl_flush_cb(lv_display_t *disp, const lv_area_t *area, uint8_t *px_map)
 {
     lvgl_gc9a01_handle_t *handle = lv_display_get_user_data(disp);
-    if (!handle) {
-        lv_display_flush_ready(disp);
+    if (!handle || !px_map || !area) {
+        ESP_LOGE(TAG, "Flush callback: Invalid parameters!");
+        if (disp) lv_display_flush_ready(disp);
         return;
     }
 
@@ -37,9 +40,25 @@ static void lvgl_flush_cb(lv_display_t *disp, const lv_area_t *area, uint8_t *px
     int offsety1 = area->y1;
     int offsety2 = area->y2;
 
+    /* Bounds check to prevent buffer overflow */
+    if (offsetx1 < 0 || offsetx2 >= GC9A01_WIDTH || offsety1 < 0 || offsety2 >= GC9A01_HEIGHT) {
+        ESP_LOGE(TAG, "Flush callback: Area out of bounds! (%d,%d) - (%d,%d)",
+                 offsetx1, offsety1, offsetx2, offsety2);
+        lv_display_flush_ready(disp);
+        return;
+    }
+
     // Calculate pixel count and byte size
     int pixel_count = (offsetx2 + 1 - offsetx1) * (offsety2 + 1 - offsety1);
     size_t byte_size = pixel_count * sizeof(lv_color_t);
+
+    /* Safety check: ensure we don't overflow the swap buffer */
+    if (byte_size > GC9A01_BUF_SIZE * sizeof(lv_color_t)) {
+        ESP_LOGE(TAG, "Flush callback: Area too large! %d bytes > %d bytes",
+                 byte_size, GC9A01_BUF_SIZE * sizeof(lv_color_t));
+        lv_display_flush_ready(disp);
+        return;
+    }
 
     // Copy to swap buffer
     memcpy(handle->swap_buf, px_map, byte_size);
@@ -48,9 +67,12 @@ static void lvgl_flush_cb(lv_display_t *disp, const lv_area_t *area, uint8_t *px
     // This converts LVGL's little-endian format to display's big-endian format
     lv_draw_sw_rgb565_swap(handle->swap_buf, pixel_count);
 
-    // Send swapped data to display
-    esp_lcd_panel_draw_bitmap(handle->panel_handle, offsetx1, offsety1,
-                              offsetx2 + 1, offsety2 + 1, handle->swap_buf);
+    // Send swapped data to display (with error handling)
+    esp_err_t ret = esp_lcd_panel_draw_bitmap(handle->panel_handle, offsetx1, offsety1,
+                                               offsetx2 + 1, offsety2 + 1, handle->swap_buf);
+    if (ret != ESP_OK) {
+        ESP_LOGE(TAG, "Flush callback: SPI transfer failed! Error: 0x%x", ret);
+    }
 
     // Inform LVGL that flushing is done
     lv_display_flush_ready(disp);
@@ -98,22 +120,37 @@ esp_err_t lvgl_gc9a01_init(const lvgl_gc9a01_config_t *config, lvgl_gc9a01_handl
     /* ========================================================================
      * STEP 3: Allocate LVGL Draw Buffers
      * ====================================================================== */
-    ESP_LOGI(TAG, "Allocating draw buffers...");
+    ESP_LOGI(TAG, "Allocating draw buffers (%d pixels = %d bytes each)...",
+             GC9A01_BUF_SIZE, GC9A01_BUF_SIZE * sizeof(lv_color_t));
 
     /* Draw buffers in PSRAM (slower but larger) */
     handle->draw_buf1 = heap_caps_malloc(GC9A01_BUF_SIZE * sizeof(lv_color_t), MALLOC_CAP_SPIRAM);
     handle->draw_buf2 = heap_caps_malloc(GC9A01_BUF_SIZE * sizeof(lv_color_t), MALLOC_CAP_SPIRAM);
 
-    /* Swap buffer in internal RAM (faster for byte-swap operations!) */
+    /* Swap buffer - try internal RAM first (fastest), fallback to PSRAM if full */
     handle->swap_buf = heap_caps_malloc(GC9A01_BUF_SIZE * sizeof(lv_color_t), MALLOC_CAP_DMA | MALLOC_CAP_INTERNAL);
+    if (!handle->swap_buf) {
+        ESP_LOGW(TAG, "Internal RAM full, using PSRAM for swap buffer");
+        handle->swap_buf = heap_caps_malloc(GC9A01_BUF_SIZE * sizeof(lv_color_t), MALLOC_CAP_SPIRAM);
+    }
 
+    /* Check if all buffers allocated successfully */
     if (!handle->draw_buf1 || !handle->draw_buf2 || !handle->swap_buf) {
         ESP_LOGE(TAG, "Failed to allocate draw buffers!");
+        ESP_LOGE(TAG, "  buf1=%p, buf2=%p, swap=%p", handle->draw_buf1, handle->draw_buf2, handle->swap_buf);
+        ESP_LOGE(TAG, "  Free PSRAM: %d bytes", heap_caps_get_free_size(MALLOC_CAP_SPIRAM));
+        ESP_LOGE(TAG, "  Free Internal: %d bytes", heap_caps_get_free_size(MALLOC_CAP_INTERNAL));
+
+        /* Clean up partial allocations */
+        if (handle->draw_buf1) heap_caps_free(handle->draw_buf1);
+        if (handle->draw_buf2) heap_caps_free(handle->draw_buf2);
+        if (handle->swap_buf) heap_caps_free(handle->swap_buf);
+
         return ESP_ERR_NO_MEM;
     }
 
-    ESP_LOGI(TAG, "Draw buffers allocated:");
-    ESP_LOGI(TAG, "  buf1=%p (PSRAM), buf2=%p (PSRAM), swap=%p (Internal RAM)",
+    ESP_LOGI(TAG, "Draw buffers allocated successfully:");
+    ESP_LOGI(TAG, "  buf1=%p (PSRAM), buf2=%p (PSRAM), swap=%p",
              handle->draw_buf1, handle->draw_buf2, handle->swap_buf);
 
     /* ========================================================================

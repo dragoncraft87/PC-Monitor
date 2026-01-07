@@ -10,7 +10,8 @@
       "Bash(python:*)",
       "Bash(dir:*)",
       "Bash(tasklist:*)",
-      "Bash(findstr:*)"
+      "Bash(findstr:*)",
+      "Bash(idf.py build:*)"
     ],
     "deny": [],
     "ask": []

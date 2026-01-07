@@ -97,22 +97,24 @@ screen_network_t *screen_network_create(lv_display_t *disp)
     }
 
     /* ========================================================================
-     * TRAFFIC STATS (Download/Upload)
+     * TRAFFIC STATS (Download/Upload) - Centered below chart
      * ====================================================================== */
 
-    /* Download Speed */
+    /* Download Speed - Center Bottom (first line) */
     s->label_down = lv_label_create(s->screen);
     lv_label_set_text(s->label_down, "DN: 0 MB/s");
-    lv_obj_set_style_text_font(s->label_down, &lv_font_montserrat_12, 0);
+    lv_obj_set_style_text_font(s->label_down, &lv_font_montserrat_14, 0);
     lv_obj_set_style_text_color(s->label_down, lv_color_make(0x00, 0xff, 0xff), 0);
-    lv_obj_align(s->label_down, LV_ALIGN_BOTTOM_LEFT, 20, -20);
+    lv_obj_set_style_text_align(s->label_down, LV_TEXT_ALIGN_CENTER, 0);
+    lv_obj_align(s->label_down, LV_ALIGN_BOTTOM_MID, 0, -35);
 
-    /* Upload Speed */
+    /* Upload Speed - Center Bottom (second line) */
     s->label_up = lv_label_create(s->screen);
     lv_label_set_text(s->label_up, "UP: 0 MB/s");
-    lv_obj_set_style_text_font(s->label_up, &lv_font_montserrat_12, 0);
+    lv_obj_set_style_text_font(s->label_up, &lv_font_montserrat_14, 0);
     lv_obj_set_style_text_color(s->label_up, lv_color_make(0xff, 0x00, 0xff), 0);
-    lv_obj_align(s->label_up, LV_ALIGN_BOTTOM_RIGHT, -20, -20);
+    lv_obj_set_style_text_align(s->label_up, LV_TEXT_ALIGN_CENTER, 0);
+    lv_obj_align(s->label_up, LV_ALIGN_BOTTOM_MID, 0, -15);
 
     /* Load screen to this display */
     lv_screen_load(s->screen);

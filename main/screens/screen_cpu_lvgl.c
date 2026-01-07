@@ -64,8 +64,8 @@ screen_cpu_t *screen_cpu_create(lv_display_t *disp)
     lv_obj_set_style_arc_width(s->arc, 20, LV_PART_MAIN);
     lv_obj_set_style_arc_rounded(s->arc, false, LV_PART_MAIN);  /* Sharp edges */
 
-    /* INDICATOR (progress arc) styling - Green */
-    lv_obj_set_style_arc_color(s->arc, lv_color_hex(0x40FF64), LV_PART_INDICATOR);
+    /* INDICATOR (progress arc) styling - Intel Blue */
+    lv_obj_set_style_arc_color(s->arc, lv_color_hex(0x0071C5), LV_PART_INDICATOR);
     lv_obj_set_style_arc_opa(s->arc, 255, LV_PART_INDICATOR);
     lv_obj_set_style_arc_width(s->arc, 20, LV_PART_INDICATOR);
     lv_obj_set_style_arc_rounded(s->arc, false, LV_PART_INDICATOR);  /* Sharp edges */
@@ -77,15 +77,16 @@ screen_cpu_t *screen_cpu_create(lv_display_t *disp)
      * CENTER LABELS - SquareLine Studio Design
      * ====================================================================== */
 
-    /* "CPU" Title - Top (Y offset -50) */
+    /* CPU Model Title - Top (Y offset -50) */
     s->label_title = lv_label_create(s->screen);
     lv_obj_set_width(s->label_title, LV_SIZE_CONTENT);
     lv_obj_set_height(s->label_title, LV_SIZE_CONTENT);
     lv_obj_set_align(s->label_title, LV_ALIGN_CENTER);
     lv_obj_set_pos(s->label_title, 0, -50);
-    lv_label_set_text(s->label_title, "CPU");
+    lv_label_set_text(s->label_title, "i9-7980XE");
     lv_obj_set_style_text_align(s->label_title, LV_TEXT_ALIGN_CENTER, LV_PART_MAIN);
-    /* Default color (white) */
+    lv_obj_set_style_text_color(s->label_title, lv_color_hex(0xCCCCCC), LV_PART_MAIN);
+    lv_obj_set_style_text_font(s->label_title, &lv_font_montserrat_16, LV_PART_MAIN);
 
     /* Percentage Value - Center (Y offset 0) */
     s->label_percent = lv_label_create(s->screen);
@@ -141,9 +142,9 @@ void screen_cpu_update(screen_cpu_t *s, const pc_stats_t *stats)
     snprintf(buf, sizeof(buf), "%d%%", stats->cpu_percent);
     lv_label_set_text(s->label_percent, buf);
 
-    /* Update temperature label with degree symbol */
+    /* Update temperature label with degree symbol (no decimals) */
     char temp_buf[16];
-    snprintf(temp_buf, sizeof(temp_buf), "%.1f°C", stats->cpu_temp);
+    snprintf(temp_buf, sizeof(temp_buf), "%d°C", (int)stats->cpu_temp);
     lv_label_set_text(s->label_temp, temp_buf);
 
     /* Change temperature color based on value */

@@ -77,7 +77,7 @@ screen_ram_t *screen_ram_create(lv_display_t *disp)
 
     /* Total RAM */
     s->label_total = lv_label_create(s->screen);
-    lv_label_set_text(s->label_total, "von 16 GB");
+    lv_label_set_text(s->label_total, "von 64 GB");
     lv_obj_set_style_text_font(s->label_total, &lv_font_montserrat_12, 0);
     lv_obj_set_style_text_color(s->label_total, lv_color_make(0x88, 0x88, 0x88), 0);
     lv_obj_align(s->label_total, LV_ALIGN_CENTER, 0, 60);
@@ -113,9 +113,10 @@ void screen_ram_update(screen_ram_t *s, const pc_stats_t *stats)
     snprintf(percent_buf, sizeof(percent_buf), "%d%%", percent);
     lv_label_set_text(s->label_percent, percent_buf);
 
-    /* Update total */
+    /* Update total (use 64GB if stats invalid) */
     char total_buf[16];
-    snprintf(total_buf, sizeof(total_buf), "von %.0f GB", stats->ram_total_gb);
+    float ram_total = (stats->ram_total_gb > 0) ? stats->ram_total_gb : 64.0f;
+    snprintf(total_buf, sizeof(total_buf), "von %.0f GB", ram_total);
     lv_label_set_text(s->label_total, total_buf);
 
     /* Change bar color based on usage */
