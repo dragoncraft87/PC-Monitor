@@ -128,6 +128,14 @@ screen_cpu_t *screen_cpu_create(lv_display_t *disp)
  * Note: Arc range is 0-120, so we map CPU percentage (0-100) to this range
  * This allows for visual overdrive effect if CPU > 100% (rare but possible with turbo)
  */
+/**
+ * @brief Get the screen object (for screensaver restore)
+ */
+lv_obj_t *screen_cpu_get_screen(screen_cpu_t *s)
+{
+    return s ? s->screen : NULL;
+}
+
 void screen_cpu_update(screen_cpu_t *s, const pc_stats_t *stats)
 {
     if (!s) return;

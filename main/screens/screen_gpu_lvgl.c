@@ -117,6 +117,14 @@ screen_gpu_t *screen_gpu_create(lv_display_t *disp)
     return s;
 }
 
+/**
+ * @brief Get the screen object (for screensaver restore)
+ */
+lv_obj_t *screen_gpu_get_screen(screen_gpu_t *s)
+{
+    return s ? s->screen : NULL;
+}
+
 void screen_gpu_update(screen_gpu_t *s, const pc_stats_t *stats)
 {
     if (!s) return;
