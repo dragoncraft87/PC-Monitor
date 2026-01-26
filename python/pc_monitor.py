@@ -457,13 +457,12 @@ class PCMonitor:
         self.log("TX Thread stopped")
 
     # =========================================================================
-    # DATA RECEIVING THREAD
+    #    DATA TRANSMISSION THREAD
     # =========================================================================
 
-    def receive_log_thread(self):
-        """Thread: Receives and displays ESP32 logs"""
-        self.log("RX Thread started")
-        buffer = ""
+    def send_data_thread(self):
+        """Thread: Sends PC stats every second with error recovery"""
+        self.log("TX Thread started")
 
         while self.running and not self.stop_event.is_set():
             if not self.connected or not self.serial_port:
@@ -471,26 +470,55 @@ class PCMonitor:
                 continue
 
             try:
-                if self.serial_port.in_waiting > 0:
-                    chunk = self.serial_port.read(self.serial_port.in_waiting)
-                    buffer += chunk.decode('utf-8', errors='ignore')
+                # Gather all stats
+                cpu_percent, cpu_temp = self.get_cpu_stats()
+                gpu_percent, gpu_temp, vram_used, vram_total = self.get_gpu_stats()
+                ram_used, ram_total = self.get_ram_stats()
+                net_type, net_speed, net_down, net_up = self.get_network_stats()
 
-                    # Process complete lines
-                    while '\n' in buffer:
-                        line, buffer = buffer.split('\n', 1)
-                        line = line.strip()
-                        if line and not self.silent:
-                            print(f"\n[ESP32] {line}")
+                # Format data string
+                data_str = (
+                    f"CPU:{cpu_percent},"
+                    f"CPUT:{cpu_temp:.1f},"
+                    f"GPU:{gpu_percent},"
+                    f"GPUT:{gpu_temp:.1f},"
+                    f"VRAM:{vram_used:.1f}/{vram_total:.1f},"
+                    f"RAM:{ram_used:.1f}/{ram_total:.1f},"
+                    f"NET:{net_type},"
+                    f"SPEED:{net_speed},"
+                    f"DOWN:{net_down:.1f},"
+                    f"UP:{net_up:.1f}\n"  # WICHTIG: Das Newline muss bleiben!
+                )
 
-            except serial.SerialException:
+                # Send to ESP32
+                if self.serial_port and self.serial_port.is_open:
+                    self.serial_port.write(data_str.encode('utf-8'))
+                    self.serial_port.flush()  # <--- DAS HIER IST NEU UND WICHTIG!
+                    self.packets_sent += 1
+
+                # Debug output (not silent)
+                if not self.silent and self.packets_sent % 5 == 0:
+                    print(f"\rTX #{self.packets_sent}: CPU={cpu_percent}% ({cpu_temp:.0f}°C) "
+                          f"GPU={gpu_percent}% ({gpu_temp:.0f}°C) "
+                          f"RAM={ram_used:.1f}GB", end='', flush=True)
+
+            except serial.SerialException as e:
+                self.log(f"Serial error: {e}", logging.WARNING)
                 self.connected = False
+                self.last_error = str(e)
+                # Versuche Port zu schließen, damit Reconnect sauber läuft
+                try:
+                    self.serial_port.close()
+                except:
+                    pass
 
             except Exception as e:
-                self.log(f"RX error: {e}", logging.DEBUG)
+                self.log(f"TX error: {e}", logging.WARNING)
+                self.last_error = str(e)
 
-            time.sleep(0.01)
+            time.sleep(1)
 
-        self.log("RX Thread stopped")
+        self.log("TX Thread stopped")
 
     # =========================================================================
     # RECONNECTION THREAD
