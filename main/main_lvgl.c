@@ -37,8 +37,8 @@ static const char *TAG = "PC-MONITOR";
 /* =============================================================================
  * CONFIGURATION - Desert-Spec Phase 2
  * ========================================================================== */
-#define SCREENSAVER_TIMEOUT_MS   5000   // 5 seconds no data -> screensaver
-#define STALE_DATA_THRESHOLD_MS  1000   // 1 second -> show red dot
+#define SCREENSAVER_TIMEOUT_MS   30000  // 30 seconds no data -> screensaver
+#define STALE_DATA_THRESHOLD_MS  2000   // 2 seconds -> show red dot
 #define DISPLAY_UPDATE_MS        100    // 10 FPS - Watchdog friendly
 #define LINE_BUFFER_SIZE         512    // Max line length
 
@@ -214,51 +214,61 @@ static void parse_pc_data(const char *line)
         // CPU Temperature
         else if (strncmp(token, "CPUT:", 5) == 0) {
             pc_stats.cpu_temp = atof(token + 5);
+            fields_parsed++;
         }
         // GPU Usage
         else if (strncmp(token, "GPU:", 4) == 0) {
             pc_stats.gpu_percent = (uint8_t)atoi(token + 4);
+            fields_parsed++;
         }
         // GPU Temperature
         else if (strncmp(token, "GPUT:", 5) == 0) {
             pc_stats.gpu_temp = atof(token + 5);
+            fields_parsed++;
         }
         // VRAM
         else if (strncmp(token, "VRAM:", 5) == 0) {
             sscanf(token + 5, "%f/%f", &pc_stats.gpu_vram_used, &pc_stats.gpu_vram_total);
+            fields_parsed++;
         }
         // RAM
         else if (strncmp(token, "RAM:", 4) == 0) {
             sscanf(token + 4, "%f/%f", &pc_stats.ram_used_gb, &pc_stats.ram_total_gb);
             if (pc_stats.ram_total_gb < 0.1f) {
-                pc_stats.ram_total_gb = 16.0f;  // Fallback
+                pc_stats.ram_total_gb = 16.0f;
             }
+            fields_parsed++;
         }
         // Network Type
         else if (strncmp(token, "NET:", 4) == 0) {
             strncpy(pc_stats.net_type, token + 4, sizeof(pc_stats.net_type) - 1);
             pc_stats.net_type[sizeof(pc_stats.net_type) - 1] = '\0';
+            fields_parsed++;
         }
         // Network Speed
         else if (strncmp(token, "SPEED:", 6) == 0) {
             strncpy(pc_stats.net_speed, token + 6, sizeof(pc_stats.net_speed) - 1);
             pc_stats.net_speed[sizeof(pc_stats.net_speed) - 1] = '\0';
+            fields_parsed++;
         }
         // Download Speed
         else if (strncmp(token, "DOWN:", 5) == 0) {
             pc_stats.net_down_mbps = atof(token + 5);
+            fields_parsed++;
         }
         // Upload Speed
         else if (strncmp(token, "UP:", 3) == 0) {
             pc_stats.net_up_mbps = atof(token + 3);
+            fields_parsed++;
         }
 
         token = strtok(NULL, ",");
     }
 
-    // Update timestamp if we got valid data
+    // Update timestamp if we got ANY valid data
     if (fields_parsed > 0) {
         last_data_ms = (uint32_t)(esp_timer_get_time() / 1000);
+        ESP_LOGD(TAG, "Parsed %d fields, timestamp updated", fields_parsed);
     }
 
     xSemaphoreGive(stats_mutex);

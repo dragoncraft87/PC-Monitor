@@ -1,4 +1,4 @@
 dependencies:
   lvgl/lvgl: "9.3.0"
-  esp_lcd_gc9a01: ^1.0
+  esp_lcd_gc9a01: ^2.0
 

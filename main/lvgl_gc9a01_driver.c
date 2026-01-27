@@ -73,7 +73,6 @@ esp_err_t lvgl_gc9a01_init(const lvgl_gc9a01_config_t *config, lvgl_gc9a01_handl
         .lcd_param_bits = 8,
         .spi_mode = 0,
         .trans_queue_depth = 1,         // BLOCKING: Only 1 transaction at a time
-        // NO callback - we use blocking mode
     };
 
     esp_err_t ret = esp_lcd_new_panel_io_spi(
