@@ -13,7 +13,10 @@
       "Bash(findstr:*)",
       "Bash(idf.py build:*)",
       "Bash(pyinstaller:*)",
-      "Bash(cmd.exe /c \"cd /d c:\\\\Users\\\\richa\\\\Desktop\\\\pc-monitor-poc && python -m PyInstaller --clean \"\"PC Monitor Manager.spec\"\"\")"
+      "Bash(cmd.exe /c \"cd /d c:\\\\Users\\\\richa\\\\Desktop\\\\pc-monitor-poc && python -m PyInstaller --clean \"\"PC Monitor Manager.spec\"\"\")",
+      "Bash(git merge:*)",
+      "Bash(git checkout:*)",
+      "Bash(git add:*)"
     ],
     "deny": [],
     "ask": []
