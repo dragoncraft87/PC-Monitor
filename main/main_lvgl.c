@@ -32,6 +32,12 @@
 #include "screens/screen_ram_lvgl.c"
 #include "screens/screen_network_lvgl.c"
 
+// Include screensaver images
+#include "images/Sonic_Ring.c"
+#include "images/triforce.c"
+#include "images/DK_Fass.c"
+#include "images/PacMan.c"
+
 static const char *TAG = "PC-MONITOR";
 
 /* =============================================================================
@@ -121,7 +127,7 @@ static lv_obj_t *create_status_dot(lv_obj_t *parent)
 /* =============================================================================
  * HELPER: Create Screensaver Overlay
  * ========================================================================== */
-static lv_obj_t *create_screensaver(lv_obj_t *parent, lv_color_t bg_color, const char *text)
+static lv_obj_t *create_screensaver(lv_obj_t *parent, lv_color_t bg_color, const lv_img_dsc_t *icon_src)
 {
     if (!parent) return NULL;
 
@@ -136,13 +142,10 @@ static lv_obj_t *create_screensaver(lv_obj_t *parent, lv_color_t bg_color, const
     lv_obj_set_style_pad_all(overlay, 0, 0);
     lv_obj_clear_flag(overlay, LV_OBJ_FLAG_SCROLLABLE);
 
-    // Centered text label
-    lv_obj_t *label = lv_label_create(overlay);
-    lv_label_set_text(label, text);
-    lv_obj_set_style_text_color(label, lv_color_white(), 0);
-    lv_obj_set_style_text_font(label, &lv_font_montserrat_24, 0);
-    lv_obj_set_style_text_align(label, LV_TEXT_ALIGN_CENTER, 0);
-    lv_obj_align(label, LV_ALIGN_CENTER, 0, 0);
+    // Centered image
+    lv_obj_t *img = lv_img_create(overlay);
+    lv_img_set_src(img, icon_src);
+    lv_obj_center(img);
 
     // Start hidden
     lv_obj_add_flag(overlay, LV_OBJ_FLAG_HIDDEN);
@@ -489,7 +492,7 @@ void app_main(void)
     screen_cpu = screen_cpu_create(lvgl_gc9a01_get_display(&display_cpu));
     if (screen_cpu && screen_cpu->screen) {
         dot_cpu = create_status_dot(screen_cpu->screen);
-        screensaver_cpu = create_screensaver(screen_cpu->screen, COLOR_SONIC_BG, "SONIC");
+        screensaver_cpu = create_screensaver(screen_cpu->screen, COLOR_SONIC_BG, &Sonic_Ring);
     }
 
     // Display 2: GPU
@@ -498,7 +501,7 @@ void app_main(void)
     screen_gpu = screen_gpu_create(lvgl_gc9a01_get_display(&display_gpu));
     if (screen_gpu && screen_gpu->screen) {
         dot_gpu = create_status_dot(screen_gpu->screen);
-        screensaver_gpu = create_screensaver(screen_gpu->screen, COLOR_ART_BG, "ART");
+        screensaver_gpu = create_screensaver(screen_gpu->screen, COLOR_ART_BG, &triforce);
     }
 
     // Display 3: RAM
@@ -507,7 +510,7 @@ void app_main(void)
     screen_ram = screen_ram_create(lvgl_gc9a01_get_display(&display_ram));
     if (screen_ram && screen_ram->screen) {
         dot_ram = create_status_dot(screen_ram->screen);
-        screensaver_ram = create_screensaver(screen_ram->screen, COLOR_DK_BG, "DONKEY KONG");
+        screensaver_ram = create_screensaver(screen_ram->screen, COLOR_DK_BG, &DK_Fass);
     }
 
     // Display 4: Network
@@ -516,7 +519,7 @@ void app_main(void)
     screen_network = screen_network_create(lvgl_gc9a01_get_display(&display_network));
     if (screen_network && screen_network->screen) {
         dot_net = create_status_dot(screen_network->screen);
-        screensaver_net = create_screensaver(screen_network->screen, COLOR_PACMAN_BG, "PAC-MAN");
+        screensaver_net = create_screensaver(screen_network->screen, COLOR_PACMAN_BG, &PacMan);
     }
 
     xSemaphoreGive(lvgl_mutex);

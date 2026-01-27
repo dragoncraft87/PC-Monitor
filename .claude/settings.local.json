@@ -16,7 +16,8 @@
       "Bash(cmd.exe /c \"cd /d c:\\\\Users\\\\richa\\\\Desktop\\\\pc-monitor-poc && python -m PyInstaller --clean \"\"PC Monitor Manager.spec\"\"\")",
       "Bash(git merge:*)",
       "Bash(git checkout:*)",
-      "Bash(git add:*)"
+      "Bash(git add:*)",
+      "Bash(pip show:*)"
     ],
     "deny": [],
     "ask": []

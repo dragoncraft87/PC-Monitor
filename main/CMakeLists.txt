@@ -6,6 +6,10 @@
             "screens/screen_gpu_lvgl.c"
             "screens/screen_ram_lvgl.c"
             "screens/screen_network_lvgl.c"
+            "images/DK_Fass.c"
+            "images/PacMan.c"
+            "images/Sonic_Ring.c"
+            "images/triforce.c"
         INCLUDE_DIRS
             "."
             "screens"
