@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-PC Monitor - "Desert-Spec" Edition
+PC Monitor - Desert-Spec Phase 2 Edition
 For ESP32-S3 USB Serial JTAG
 
 Features:
@@ -9,6 +9,7 @@ Features:
 - LibreHardwareMonitor with WMI/psutil fallbacks
 - Thread-safe for tray app integration
 - Robust error handling and logging
+- CRITICAL: flush() after every write to prevent data stalls
 
 Usage:
     python pc_monitor.py              # Normal mode with console output
@@ -59,6 +60,7 @@ except ImportError:
 # LibreHardwareMonitor support (requires admin rights)
 OHM_AVAILABLE = False
 Hardware = None
+
 
 def init_libre_hardware_monitor():
     """Initialize LibreHardwareMonitor with proper error handling"""
@@ -400,6 +402,33 @@ class PCMonitor:
         return net_type, net_speed, net_down_mbps, net_up_mbps
 
     # =========================================================================
+    # DATA RECEIVE THREAD (for ESP32 logs)
+    # =========================================================================
+
+    def receive_log_thread(self):
+        """Thread: Receives and logs messages from ESP32"""
+        self.log("RX Thread started")
+
+        while self.running and not self.stop_event.is_set():
+            if not self.connected or not self.serial_port:
+                time.sleep(0.5)
+                continue
+
+            try:
+                if self.serial_port.in_waiting > 0:
+                    line = self.serial_port.readline().decode('utf-8', errors='ignore').strip()
+                    if line:
+                        self.log(f"[ESP32] {line}", logging.DEBUG)
+            except serial.SerialException:
+                self.connected = False
+            except Exception as e:
+                self.log(f"RX error: {e}", logging.DEBUG)
+
+            time.sleep(0.1)
+
+        self.log("RX Thread stopped")
+
+    # =========================================================================
     # DATA TRANSMISSION THREAD
     # =========================================================================
 
@@ -433,83 +462,26 @@ class PCMonitor:
                     f"UP:{net_up:.1f}\n"
                 )
 
-                # Send to ESP32
-                self.serial_port.write(data_str.encode('utf-8'))
-                self.packets_sent += 1
-
-                # Debug output (not silent)
-                if not self.silent and self.packets_sent % 5 == 0:
-                    print(f"\rTX #{self.packets_sent}: CPU={cpu_percent}% ({cpu_temp:.0f}°C) "
-                          f"GPU={gpu_percent}% ({gpu_temp:.0f}°C) "
-                          f"RAM={ram_used:.1f}GB", end='', flush=True)
-
-            except serial.SerialException as e:
-                self.log(f"Serial error: {e}", logging.WARNING)
-                self.connected = False
-                self.last_error = str(e)
-
-            except Exception as e:
-                self.log(f"TX error: {e}", logging.WARNING)
-                self.last_error = str(e)
-
-            time.sleep(1)
-
-        self.log("TX Thread stopped")
-
-    # =========================================================================
-    #    DATA TRANSMISSION THREAD
-    # =========================================================================
-
-    def send_data_thread(self):
-        """Thread: Sends PC stats every second with error recovery"""
-        self.log("TX Thread started")
-
-        while self.running and not self.stop_event.is_set():
-            if not self.connected or not self.serial_port:
-                time.sleep(0.5)
-                continue
-
-            try:
-                # Gather all stats
-                cpu_percent, cpu_temp = self.get_cpu_stats()
-                gpu_percent, gpu_temp, vram_used, vram_total = self.get_gpu_stats()
-                ram_used, ram_total = self.get_ram_stats()
-                net_type, net_speed, net_down, net_up = self.get_network_stats()
-
-                # Format data string
-                data_str = (
-                    f"CPU:{cpu_percent},"
-                    f"CPUT:{cpu_temp:.1f},"
-                    f"GPU:{gpu_percent},"
-                    f"GPUT:{gpu_temp:.1f},"
-                    f"VRAM:{vram_used:.1f}/{vram_total:.1f},"
-                    f"RAM:{ram_used:.1f}/{ram_total:.1f},"
-                    f"NET:{net_type},"
-                    f"SPEED:{net_speed},"
-                    f"DOWN:{net_down:.1f},"
-                    f"UP:{net_up:.1f}\n"  # WICHTIG: Das Newline muss bleiben!
-                )
-
-                # Send to ESP32
+                # Send to ESP32 with CRITICAL flush()
                 if self.serial_port and self.serial_port.is_open:
                     self.serial_port.write(data_str.encode('utf-8'))
-                    self.serial_port.flush()  # <--- DAS HIER IST NEU UND WICHTIG!
+                    self.serial_port.flush()  # DESERT-SPEC: Prevents data stalls!
                     self.packets_sent += 1
 
                 # Debug output (not silent)
                 if not self.silent and self.packets_sent % 5 == 0:
-                    print(f"\rTX #{self.packets_sent}: CPU={cpu_percent}% ({cpu_temp:.0f}°C) "
-                          f"GPU={gpu_percent}% ({gpu_temp:.0f}°C) "
+                    print(f"\rTX #{self.packets_sent}: CPU={cpu_percent}% ({cpu_temp:.0f}C) "
+                          f"GPU={gpu_percent}% ({gpu_temp:.0f}C) "
                           f"RAM={ram_used:.1f}GB", end='', flush=True)
 
             except serial.SerialException as e:
                 self.log(f"Serial error: {e}", logging.WARNING)
                 self.connected = False
                 self.last_error = str(e)
-                # Versuche Port zu schließen, damit Reconnect sauber läuft
+                # Close port for clean reconnect
                 try:
                     self.serial_port.close()
-                except:
+                except Exception:
                     pass
 
             except Exception as e:
@@ -572,7 +544,7 @@ class PCMonitor:
         """
         if not self.silent:
             print("=" * 60)
-            print("PC Monitor - Desert-Spec Edition")
+            print("PC Monitor - Desert-Spec Phase 2 Edition")
             print("=" * 60)
 
         # Initial connection attempt
@@ -687,7 +659,7 @@ def run_monitor(stop_event=None, port=None, silent=True):
 def main():
     """Main entry point with CLI argument parsing"""
     parser = argparse.ArgumentParser(
-        description='PC Monitor - Desert-Spec Edition',
+        description='PC Monitor - Desert-Spec Phase 2 Edition',
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
