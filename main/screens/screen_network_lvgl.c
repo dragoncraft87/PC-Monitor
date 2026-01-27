@@ -127,6 +127,14 @@ screen_network_t *screen_network_create(lv_display_t *disp)
     return s;
 }
 
+/**
+ * @brief Get the screen object (for screensaver restore)
+ */
+lv_obj_t *screen_network_get_screen(screen_network_t *s)
+{
+    return s ? s->screen : NULL;
+}
+
 void screen_network_update(screen_network_t *s, const pc_stats_t *stats)
 {
     if (!s) return;

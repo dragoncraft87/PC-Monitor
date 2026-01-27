@@ -1,450 +1,250 @@
 /**
  * @file main_lvgl.c
- * @brief PC Monitor - 4x GC9A01 Displays with LVGL
- *
- * ESP32-S3 N16R8 with LVGL for 4 round displays:
- * - Display 1 (CPU): Ring gauge with percentage and temperature
- * - Display 2 (GPU): Ring gauge with percentage, temp, VRAM
- * - Display 3 (RAM): Horizontal bar with segments
- * - Display 4 (Network): Cyberpunk graph with traffic history
+ * @brief PC Monitor - Desert-Spec Edition (Watchdog Fix)
  */
 
 #include <stdio.h>
 #include <string.h>
+#include <math.h>
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "freertos/semphr.h"
 #include "esp_log.h"
-#include "esp_task_wdt.h"
+#include "esp_timer.h"
 #include "driver/gpio.h"
 #include "driver/spi_master.h"
 #include "driver/usb_serial_jtag.h"
-#include "esp_heap_caps.h"
 
 #include "lvgl.h"
 #include "lvgl_gc9a01_driver.h"
 #include "screens/screens_lvgl.h"
+#include "screens/screen_cpu_lvgl.c"
+#include "screens/screen_gpu_lvgl.c"
+#include "screens/screen_ram_lvgl.c"
+#include "screens/screen_network_lvgl.c"
 
-static const char *TAG = "PC-MONITOR-LVGL";
+static const char *TAG = "PC-MONITOR";
 
-/* ============================================================================
- * CUSTOM MEMORY ALLOCATOR - PREFER PSRAM OVER INTERNAL RAM
- * ========================================================================== */
+/* ================= CONFIGURATION ================= */
+#define SCREENSAVER_TIMEOUT_MS 5000
+#define STALE_DATA_THRESHOLD_MS 1000 
 
-/**
- * @brief Custom malloc that prefers PSRAM to save internal RAM
- *
- * Strategy:
- * 1. Try PSRAM first (for most LVGL objects)
- * 2. Fall back to DMA-capable internal RAM if PSRAM fails
- * 3. Fall back to any internal RAM as last resort
- */
-void *lv_custom_malloc(size_t size)
-{
-    if (size == 0) return NULL;
-
-    /* Try PSRAM first (best for large allocations) */
-    void *ptr = heap_caps_malloc(size, MALLOC_CAP_SPIRAM);
-    if (ptr) {
-        return ptr;
-    }
-
-    /* PSRAM full - try DMA-capable internal RAM */
-    ptr = heap_caps_malloc(size, MALLOC_CAP_DMA | MALLOC_CAP_INTERNAL);
-    if (ptr) {
-        ESP_LOGW(TAG, "PSRAM full! Allocated %d bytes from internal DMA RAM", size);
-        return ptr;
-    }
-
-    /* Last resort: any internal RAM */
-    ptr = heap_caps_malloc(size, MALLOC_CAP_INTERNAL);
-    if (ptr) {
-        ESP_LOGW(TAG, "PSRAM full! Allocated %d bytes from internal RAM", size);
-        return ptr;
-    }
-
-    ESP_LOGE(TAG, "OUT OF MEMORY! Failed to allocate %d bytes", size);
-    return NULL;
-}
-
-/**
- * @brief Custom free (works with any heap type)
- */
-void lv_custom_free(void *ptr)
-{
-    if (ptr) {
-        heap_caps_free(ptr);
-    }
-}
-
-/**
- * @brief Custom realloc that prefers PSRAM
- */
-void *lv_custom_realloc(void *ptr, size_t size)
-{
-    if (size == 0) {
-        lv_custom_free(ptr);
-        return NULL;
-    }
-
-    if (!ptr) {
-        return lv_custom_malloc(size);
-    }
-
-    /* Try realloc in PSRAM first */
-    void *new_ptr = heap_caps_realloc(ptr, size, MALLOC_CAP_SPIRAM);
-    if (new_ptr) {
-        return new_ptr;
-    }
-
-    /* PSRAM realloc failed - allocate new block and copy */
-    new_ptr = lv_custom_malloc(size);
-    if (new_ptr) {
-        /* Copy old data (we don't know the old size, so copy min of new size) */
-        memcpy(new_ptr, ptr, size);
-        lv_custom_free(ptr);
-        return new_ptr;
-    }
-
-    ESP_LOGE(TAG, "OUT OF MEMORY! Failed to realloc %d bytes", size);
-    return NULL;
-}
-
-/* ============================================================================
- * DISPLAY HANDLES
- * ========================================================================== */
-static lvgl_gc9a01_handle_t display_cpu;
-static lvgl_gc9a01_handle_t display_gpu;
-static lvgl_gc9a01_handle_t display_ram;
-static lvgl_gc9a01_handle_t display_network;
-
-/* Screen handles */
-static screen_cpu_t *screen_cpu;
-static screen_gpu_t *screen_gpu;
-static screen_ram_t *screen_ram;
-static screen_network_t *screen_network;
-
-/* ============================================================================
- * PC STATS
- * ========================================================================== */
-static pc_stats_t pc_stats = {
-    .cpu_percent = 45,
-    .cpu_temp = 62.5,
-    .gpu_percent = 72,
-    .gpu_temp = 68.3,
-    .gpu_vram_used = 4.2,
-    .gpu_vram_total = 8.0,
-    .ram_used_gb = 10.4,
-    .ram_total_gb = 16.0,
-    .net_type = "LAN",
-    .net_speed = "1000 Mbps",
-    .net_down_mbps = 12.4,
-    .net_up_mbps = 2.1
-};
-
-/* Mutex for thread-safe access to pc_stats */
+/* Global State */
+static pc_stats_t pc_stats;
 static SemaphoreHandle_t stats_mutex;
-
-/* Mutex for thread-safe LVGL operations */
 static SemaphoreHandle_t lvgl_mutex;
+static volatile uint32_t last_data_ms = 0;
 
-/* ============================================================================
- * GPIO PIN DEFINITIONS (Custom wiring by Richard)
- * ========================================================================== */
-static const lvgl_gc9a01_config_t config_cpu = {
-    .pin_sck = 4,
-    .pin_mosi = 5,
-    .pin_cs = 12,
-    .pin_dc = 11,
-    .pin_rst = 13,
-    .spi_host = SPI2_HOST
-};
+/* Displays & Screens */
+static lvgl_gc9a01_handle_t display_cpu, display_gpu, display_ram, display_network;
+static screen_cpu_t *screen_cpu = NULL;
+static screen_gpu_t *screen_gpu = NULL;
+static screen_ram_t *screen_ram = NULL;
+static screen_network_t *screen_network = NULL;
 
-static const lvgl_gc9a01_config_t config_gpu = {
-    .pin_sck = 4,
-    .pin_mosi = 5,
-    .pin_cs = 9,
-    .pin_dc = 46,
-    .pin_rst = 10,
-    .spi_host = SPI2_HOST
-};
+/* Red Dots */
+static lv_obj_t *dot_cpu = NULL;
+static lv_obj_t *dot_gpu = NULL;
+static lv_obj_t *dot_ram = NULL;
+static lv_obj_t *dot_net = NULL;
 
-static const lvgl_gc9a01_config_t config_ram = {
-    .pin_sck = 4,
-    .pin_mosi = 5,
-    .pin_cs = 8,
-    .pin_dc = 18,
-    .pin_rst = 3,
-    .spi_host = SPI2_HOST
-};
+static bool is_screensaver = false;
 
-static const lvgl_gc9a01_config_t config_network = {
-    .pin_sck = 4,
-    .pin_mosi = 5,
-    .pin_cs = 16,
-    .pin_dc = 15,
-    .pin_rst = 17,
-    .spi_host = SPI2_HOST
-};
+/* SPI Configs */
+static const lvgl_gc9a01_config_t config_cpu = { .pin_sck=4, .pin_mosi=5, .pin_cs=12, .pin_dc=11, .pin_rst=13, .spi_host=SPI2_HOST };
+static const lvgl_gc9a01_config_t config_gpu = { .pin_sck=4, .pin_mosi=5, .pin_cs=9,  .pin_dc=46, .pin_rst=10, .spi_host=SPI2_HOST };
+static const lvgl_gc9a01_config_t config_ram = { .pin_sck=4, .pin_mosi=5, .pin_cs=8,  .pin_dc=18, .pin_rst=3,  .spi_host=SPI2_HOST };
+static const lvgl_gc9a01_config_t config_net = { .pin_sck=4, .pin_mosi=5, .pin_cs=16, .pin_dc=15, .pin_rst=17, .spi_host=SPI2_HOST };
 
-/* ============================================================================
- * USB SERIAL RECEIVE BUFFER
- * ========================================================================== */
-#define USB_RX_BUF_SIZE 512
-static uint8_t usb_rx_buf[USB_RX_BUF_SIZE];
+/* Helper: Red Dot */
+static lv_obj_t* create_status_dot(lv_obj_t *parent) {
+    if (!parent) return NULL;
+    lv_obj_t *dot = lv_obj_create(parent);
+    lv_obj_set_size(dot, 12, 12);
+    lv_obj_set_style_radius(dot, LV_RADIUS_CIRCLE, 0);
+    lv_obj_set_style_bg_color(dot, lv_palette_main(LV_PALETTE_RED), 0);
+    lv_obj_set_style_border_width(dot, 1, 0);
+    lv_obj_set_style_border_color(dot, lv_color_white(), 0);
+    lv_obj_align(dot, LV_ALIGN_BOTTOM_MID, 0, -10);
+    lv_obj_add_flag(dot, LV_OBJ_FLAG_HIDDEN); 
+    return dot;
+}
 
-/**
- * @brief Parse PC data from USB Serial
- * Format: "CPU:45,CPUT:62.5,GPU:72,GPUT:68.3,VRAM:4.2/8.0,RAM:10.4/16.0,NET:LAN,SPEED:1000,DOWN:12.4,UP:2.1"
- */
-void parse_pc_data(const char *data)
-{
-    char data_copy[USB_RX_BUF_SIZE];
-    strncpy(data_copy, data, USB_RX_BUF_SIZE - 1);
-
+/* Parser */
+void parse_pc_data(char *line) {
     xSemaphoreTake(stats_mutex, portMAX_DELAY);
+    
+    char *token = strtok(line, ",");
+    int fields_found = 0;
 
-    char *token = strtok(data_copy, ",");
     while (token != NULL) {
-        if (strncmp(token, "CPU:", 4) == 0) {
-            pc_stats.cpu_percent = atoi(token + 4);
-        } else if (strncmp(token, "CPUT:", 5) == 0) {
-            pc_stats.cpu_temp = atof(token + 5);
-        } else if (strncmp(token, "GPU:", 4) == 0) {
-            pc_stats.gpu_percent = atoi(token + 4);
-        } else if (strncmp(token, "GPUT:", 5) == 0) {
-            pc_stats.gpu_temp = atof(token + 5);
-        } else if (strncmp(token, "VRAM:", 5) == 0) {
-            sscanf(token + 5, "%f/%f", &pc_stats.gpu_vram_used, &pc_stats.gpu_vram_total);
-        } else if (strncmp(token, "RAM:", 4) == 0) {
+        if (strncmp(token, "CPU:", 4) == 0) { pc_stats.cpu_percent = atoi(token + 4); fields_found++; }
+        else if (strncmp(token, "CPUT:", 5) == 0) pc_stats.cpu_temp = atof(token + 5);
+        else if (strncmp(token, "GPU:", 4) == 0) pc_stats.gpu_percent = atoi(token + 4);
+        else if (strncmp(token, "GPUT:", 5) == 0) pc_stats.gpu_temp = atof(token + 5);
+        else if (strncmp(token, "VRAM:", 5) == 0) sscanf(token + 5, "%f/%f", &pc_stats.gpu_vram_used, &pc_stats.gpu_vram_total);
+        else if (strncmp(token, "RAM:", 4) == 0) {
             sscanf(token + 4, "%f/%f", &pc_stats.ram_used_gb, &pc_stats.ram_total_gb);
-        } else if (strncmp(token, "NET:", 4) == 0) {
-            strncpy(pc_stats.net_type, token + 4, 15);
-        } else if (strncmp(token, "SPEED:", 6) == 0) {
-            strncpy(pc_stats.net_speed, token + 6, 15);
-        } else if (strncmp(token, "DOWN:", 5) == 0) {
-            pc_stats.net_down_mbps = atof(token + 5);
-        } else if (strncmp(token, "UP:", 3) == 0) {
-            pc_stats.net_up_mbps = atof(token + 3);
+            if (pc_stats.ram_total_gb < 0.1f) pc_stats.ram_total_gb = 16.0f; 
         }
+        else if (strncmp(token, "NET:", 4) == 0) {
+            strncpy(pc_stats.net_type, token + 4, sizeof(pc_stats.net_type) - 1);
+            pc_stats.net_type[sizeof(pc_stats.net_type) - 1] = '\0';
+        }
+        else if (strncmp(token, "SPEED:", 6) == 0) {
+            strncpy(pc_stats.net_speed, token + 6, sizeof(pc_stats.net_speed) - 1);
+            pc_stats.net_speed[sizeof(pc_stats.net_speed) - 1] = '\0';
+        }
+        else if (strncmp(token, "DOWN:", 5) == 0) pc_stats.net_down_mbps = atof(token + 5);
+        else if (strncmp(token, "UP:", 3) == 0) pc_stats.net_up_mbps = atof(token + 3);
+        
         token = strtok(NULL, ",");
     }
 
+    if (fields_found > 0) {
+        last_data_ms = (uint32_t)(esp_timer_get_time() / 1000);
+    }
     xSemaphoreGive(stats_mutex);
 }
 
-/**
- * @brief USB RX Task - Receives data from PC
- */
-void usb_rx_task(void *arg)
-{
-    ESP_LOGI(TAG, "USB RX Task started - waiting for data...");
-    int no_data_counter = 0;
+/* TASKS */
+void usb_rx_task(void *arg) {
+    static uint8_t rx_buf[1024];
+    static uint8_t line_buf[1024];
+    static int line_pos = 0;
+
+    ESP_LOGI(TAG, "USB RX Task started");
 
     while (1) {
-        int len = usb_serial_jtag_read_bytes(usb_rx_buf, USB_RX_BUF_SIZE - 1, pdMS_TO_TICKS(100));
+        // Lese mit Timeout, damit andere Tasks auch mal drankommen
+        int len = usb_serial_jtag_read_bytes(rx_buf, sizeof(rx_buf), pdMS_TO_TICKS(10));
+        
         if (len > 0) {
-            usb_rx_buf[len] = '\0';
-            ESP_LOGI(TAG, "✓ RX [%d bytes]: %s", len, usb_rx_buf);
-            parse_pc_data((char *)usb_rx_buf);
-            no_data_counter = 0;  // Reset counter
-        } else {
-            no_data_counter++;
-            if (no_data_counter >= 100) {  // Alle 10 Sekunden
-                ESP_LOGW(TAG, "⚠ No data received for 10 seconds - check Python script!");
-                no_data_counter = 0;
+            for (int i = 0; i < len; i++) {
+                uint8_t c = rx_buf[i];
+                if (c == '\n' || c == '\r') {
+                    if (line_pos > 0) {
+                        line_buf[line_pos] = 0; 
+                        parse_pc_data((char*)line_buf);
+                        line_pos = 0; 
+                    }
+                } else {
+                    if (line_pos < sizeof(line_buf) - 1) line_buf[line_pos++] = c;
+                    else line_pos = 0; // Overflow
+                }
             }
-        }
-        vTaskDelay(pdMS_TO_TICKS(100));
-    }
-}
-
-/**
- * @brief LVGL Tick Task - Provides time base for LVGL
- */
-void lvgl_tick_task(void *arg)
-{
-    while (1) {
-        lv_tick_inc(10);
-        vTaskDelay(pdMS_TO_TICKS(10));
-    }
-}
-
-/**
- * @brief LVGL Timer Task - Handles LVGL internal timers
- * Protected by mutex to prevent race conditions with display updates
- */
-void lvgl_timer_task(void *arg)
-{
-    while (1) {
-        /* Lock LVGL mutex before calling timer handler */
-        if (xSemaphoreTake(lvgl_mutex, pdMS_TO_TICKS(100)) == pdTRUE) {
-            uint32_t time_till_next = lv_timer_handler();
-            xSemaphoreGive(lvgl_mutex);
-
-            /* Yield to other tasks to prevent watchdog */
-            if (time_till_next > 10) {
-                vTaskDelay(pdMS_TO_TICKS(10));
-            } else {
-                vTaskDelay(pdMS_TO_TICKS(time_till_next));
-            }
+            // CRITICAL FIX: Gib dem Watchdog eine Chance!
+            vTaskDelay(pdMS_TO_TICKS(1)); 
         } else {
-            /* Mutex timeout - just wait and retry */
             vTaskDelay(pdMS_TO_TICKS(10));
         }
     }
 }
 
-/**
- * @brief Display Update Task - Updates all 4 displays
- * All screen updates are protected by LVGL mutex to ensure consistency
- *
- * CRITICAL FIX: Added NULL-pointer checks to prevent crashes if screen creation fails
- */
-void display_update_task(void *arg)
-{
-    ESP_LOGI(TAG, "Display update task started");
-    int update_counter = 0;
+void display_update_task(void *arg) {
+    last_data_ms = (uint32_t)(esp_timer_get_time() / 1000);
 
     while (1) {
-        /* Copy stats to local variable (fast) */
-        xSemaphoreTake(stats_mutex, portMAX_DELAY);
-        pc_stats_t stats_copy = pc_stats;
-        xSemaphoreGive(stats_mutex);
+        uint32_t now = (uint32_t)(esp_timer_get_time() / 1000);
+        uint32_t diff = now - last_data_ms;
+        bool stale_data = (diff > STALE_DATA_THRESHOLD_MS);
+        bool should_screensaver = (diff > SCREENSAVER_TIMEOUT_MS);
 
-        /* Debug: Log current values every 10 seconds */
-        if (update_counter % 10 == 0) {
-            ESP_LOGI(TAG, "📊 Stats: CPU=%d%% (%.1f°C), GPU=%d%% (%.1f°C), RAM=%.1f/%.1fGB",
-                     stats_copy.cpu_percent, stats_copy.cpu_temp,
-                     stats_copy.gpu_percent, stats_copy.gpu_temp,
-                     stats_copy.ram_used_gb, stats_copy.ram_total_gb);
-        }
-        update_counter++;
+        if (xSemaphoreTake(lvgl_mutex, pdMS_TO_TICKS(100)) == pdTRUE) { // Try Take
+            
+            /* Screensaver Logic */
+            if (should_screensaver && !is_screensaver) {
+                is_screensaver = true;
+                ESP_LOGW(TAG, "Screensaver ON");
+                // TODO: Show Images
+            } else if (!should_screensaver && is_screensaver) {
+                is_screensaver = false;
+                ESP_LOGI(TAG, "Screensaver OFF");
+            }
 
-        /* Lock LVGL mutex ONCE for all screen updates to keep frame consistent */
-        if (xSemaphoreTake(lvgl_mutex, pdMS_TO_TICKS(100)) == pdTRUE) {
-            /* NULL-pointer checks to prevent crashes */
-            if (screen_cpu) screen_cpu_update(screen_cpu, &stats_copy);
-            if (screen_gpu) screen_gpu_update(screen_gpu, &stats_copy);
-            if (screen_ram) screen_ram_update(screen_ram, &stats_copy);
-            if (screen_network) screen_network_update(screen_network, &stats_copy);
+            /* Red Dots (Lazy Init) */
+            if (!dot_cpu && screen_cpu) dot_cpu = create_status_dot(screen_cpu->screen);
+            if (!dot_gpu && screen_gpu) dot_gpu = create_status_dot(screen_gpu->screen);
+            if (!dot_ram && screen_ram) dot_ram = create_status_dot(screen_ram->screen);
+            if (!dot_net && screen_network) dot_net = create_status_dot(screen_network->screen);
+
+            if (dot_cpu) { if (stale_data) lv_obj_clear_flag(dot_cpu, LV_OBJ_FLAG_HIDDEN); else lv_obj_add_flag(dot_cpu, LV_OBJ_FLAG_HIDDEN); }
+            if (dot_gpu) { if (stale_data) lv_obj_clear_flag(dot_gpu, LV_OBJ_FLAG_HIDDEN); else lv_obj_add_flag(dot_gpu, LV_OBJ_FLAG_HIDDEN); }
+            if (dot_ram) { if (stale_data) lv_obj_clear_flag(dot_ram, LV_OBJ_FLAG_HIDDEN); else lv_obj_add_flag(dot_ram, LV_OBJ_FLAG_HIDDEN); }
+            if (dot_net) { if (stale_data) lv_obj_clear_flag(dot_net, LV_OBJ_FLAG_HIDDEN); else lv_obj_add_flag(dot_net, LV_OBJ_FLAG_HIDDEN); }
+
+            /* Update Stats */
+            xSemaphoreTake(stats_mutex, portMAX_DELAY);
+            pc_stats_t local = pc_stats;
+            xSemaphoreGive(stats_mutex);
+
+            if (screen_cpu) screen_cpu_update(screen_cpu, &local);
+            if (screen_gpu) screen_gpu_update(screen_gpu, &local);
+            if (screen_ram) screen_ram_update(screen_ram, &local);
+            if (screen_network) screen_network_update(screen_network, &local);
+
             xSemaphoreGive(lvgl_mutex);
-        } else {
-            ESP_LOGW(TAG, "Failed to acquire LVGL mutex for display update!");
         }
-
-        vTaskDelay(pdMS_TO_TICKS(1000)); /* Update every second */
+        
+        vTaskDelay(pdMS_TO_TICKS(200)); 
     }
 }
 
-/**
- * @brief Main application
- */
-void app_main(void)
-{
-    ESP_LOGI(TAG, "=== PC Monitor 4x Display with LVGL ===");
-    ESP_LOGI(TAG, "ESP32-S3 N16R8 with PSRAM");
+// FIX: Erhöhtes Delay für Tick Task, damit IDLE Task laufen kann
+void lvgl_tick_task(void *arg) {
+    while(1) { 
+        lv_tick_inc(10); 
+        vTaskDelay(pdMS_TO_TICKS(10)); 
+    }
+}
 
-    /* Disable Task Watchdog for now (LVGL needs more time) */
-    ESP_ERROR_CHECK(esp_task_wdt_deinit());
-    ESP_LOGI(TAG, "Task Watchdog disabled for LVGL");
+void lvgl_timer_task(void *arg) {
+    while(1) {
+        if (xSemaphoreTake(lvgl_mutex, pdMS_TO_TICKS(100)) == pdTRUE) {
+            lv_timer_handler();
+            xSemaphoreGive(lvgl_mutex);
+        }
+        vTaskDelay(pdMS_TO_TICKS(10));
+    }
+}
 
-    /* Create mutexes for thread safety */
+void app_main(void) {
     stats_mutex = xSemaphoreCreateMutex();
     lvgl_mutex = xSemaphoreCreateMutex();
-    ESP_LOGI(TAG, "Mutexes created for thread-safe operation");
+    
+    usb_serial_jtag_driver_config_t usb_cfg = { .rx_buffer_size = 2048, .tx_buffer_size = 1024 };
+    usb_serial_jtag_driver_install(&usb_cfg);
 
-    /* ========================================================================
-     * STEP 1: Configure USB Serial
-     * ====================================================================== */
-    usb_serial_jtag_driver_config_t usb_config = {
-        .rx_buffer_size = USB_RX_BUF_SIZE,
-        .tx_buffer_size = 1024,
-    };
-    ESP_ERROR_CHECK(usb_serial_jtag_driver_install(&usb_config));
-    ESP_LOGI(TAG, "USB Serial JTAG configured");
-
-    /* ========================================================================
-     * STEP 2: Initialize SPI Bus (shared by all displays)
-     * ====================================================================== */
     spi_bus_config_t buscfg = {
-        .mosi_io_num = 5,
-        .miso_io_num = -1,
-        .sclk_io_num = 4,
-        .quadwp_io_num = -1,
-        .quadhd_io_num = -1,
-        .max_transfer_sz = 240 * 240 * 2
+        .mosi_io_num = 5, .sclk_io_num = 4, .miso_io_num = -1, 
+        .quadwp_io_num = -1, .quadhd_io_num = -1, 
+        .max_transfer_sz = 240*240*2*2
     };
-    ESP_ERROR_CHECK(spi_bus_initialize(SPI2_HOST, &buscfg, SPI_DMA_CH_AUTO));
-    ESP_LOGI(TAG, "SPI bus initialized");
+    spi_bus_initialize(SPI2_HOST, &buscfg, SPI_DMA_CH_AUTO);
 
-    /* ========================================================================
-     * STEP 3: Initialize LVGL
-     * ====================================================================== */
-    ESP_LOGI(TAG, "Initializing LVGL...");
     lv_init();
-
-    /* ========================================================================
-     * STEP 4: Initialize 4 Displays with LVGL
-     * IMPORTANT: Must be done BEFORE starting lvgl_timer_task to avoid race!
-     * ====================================================================== */
-
-    /* Lock LVGL mutex during display creation to prevent race with timer task */
+    
     xSemaphoreTake(lvgl_mutex, portMAX_DELAY);
-
-    /* Display 1: CPU */
-    ESP_LOGI(TAG, "Initializing Display 1: CPU");
-    ESP_ERROR_CHECK(lvgl_gc9a01_init(&config_cpu, &display_cpu));
+    
+    lvgl_gc9a01_init(&config_cpu, &display_cpu);
     screen_cpu = screen_cpu_create(lvgl_gc9a01_get_display(&display_cpu));
-    if (!screen_cpu) {
-        ESP_LOGE(TAG, "Failed to create CPU screen!");
-    }
 
-    /* Display 2: GPU */
-    ESP_LOGI(TAG, "Initializing Display 2: GPU");
-    ESP_ERROR_CHECK(lvgl_gc9a01_init(&config_gpu, &display_gpu));
+    lvgl_gc9a01_init(&config_gpu, &display_gpu);
     screen_gpu = screen_gpu_create(lvgl_gc9a01_get_display(&display_gpu));
-    if (!screen_gpu) {
-        ESP_LOGE(TAG, "Failed to create GPU screen!");
-    }
 
-    /* Display 3: RAM */
-    ESP_LOGI(TAG, "Initializing Display 3: RAM");
-    ESP_ERROR_CHECK(lvgl_gc9a01_init(&config_ram, &display_ram));
+    lvgl_gc9a01_init(&config_ram, &display_ram);
     screen_ram = screen_ram_create(lvgl_gc9a01_get_display(&display_ram));
-    if (!screen_ram) {
-        ESP_LOGE(TAG, "Failed to create RAM screen!");
-    }
 
-    /* Display 4: Network */
-    ESP_LOGI(TAG, "Initializing Display 4: Network");
-    ESP_ERROR_CHECK(lvgl_gc9a01_init(&config_network, &display_network));
+    lvgl_gc9a01_init(&config_net, &display_network);
     screen_network = screen_network_create(lvgl_gc9a01_get_display(&display_network));
-    if (!screen_network) {
-        ESP_LOGE(TAG, "Failed to create Network screen!");
-    }
-
+    
     xSemaphoreGive(lvgl_mutex);
 
-    /* Print memory statistics after initialization */
-    ESP_LOGI(TAG, "=== Memory Statistics After Init ===");
-    ESP_LOGI(TAG, "Free PSRAM: %d bytes", heap_caps_get_free_size(MALLOC_CAP_SPIRAM));
-    ESP_LOGI(TAG, "Free Internal RAM: %d bytes", heap_caps_get_free_size(MALLOC_CAP_INTERNAL));
-    ESP_LOGI(TAG, "Largest free PSRAM block: %d bytes", heap_caps_get_largest_free_block(MALLOC_CAP_SPIRAM));
-    ESP_LOGI(TAG, "Largest free Internal block: %d bytes", heap_caps_get_largest_free_block(MALLOC_CAP_INTERNAL));
-
-    ESP_LOGI(TAG, "All 4 displays initialized!");
-
-    /* ========================================================================
-     * STEP 5: Create Tasks
-     * ====================================================================== */
-    /* Note: Stack sizes increased to prevent overflow with 4 displays + LVGL 9
-     * Stack is allocated from PSRAM (CONFIG_SPIRAM_ALLOW_STACK_EXTERNAL_MEMORY=y)
-     */
-    xTaskCreate(lvgl_tick_task, "lvgl_tick", 2048, NULL, 8, NULL); /* 2KB - Prio 8 (reduced from 10) */
-    xTaskCreatePinnedToCore(lvgl_timer_task, "lvgl_timer", 32768, NULL, 5, NULL, 1);  /* Core 1 - 32KB (was 24KB) */
-    xTaskCreate(usb_rx_task, "usb_rx", 6144, NULL, 6, NULL);  /* 6KB - Prio 6 (reduced from 10) */
-    xTaskCreatePinnedToCore(display_update_task, "display_update", 20480, NULL, 4, NULL, 0);  /* Core 0 - 20KB (was 16KB) */
-
-    ESP_LOGI(TAG, "=== System ready! ===");
+    // FIX: Angepasste Prioritäten
+    xTaskCreate(usb_rx_task, "usb_rx", 4096, NULL, 5, NULL); // Prio 5 (niedrig)
+    xTaskCreate(lvgl_tick_task, "lv_tick", 2048, NULL, 10, NULL); // Prio 10
+    xTaskCreatePinnedToCore(lvgl_timer_task, "lv_timer", 8192, NULL, 5, NULL, 1);
+    xTaskCreatePinnedToCore(display_update_task, "update", 4096, NULL, 5, NULL, 0);
+    
+    ESP_LOGI(TAG, "System initialized. Waiting for USB Data...");
 }

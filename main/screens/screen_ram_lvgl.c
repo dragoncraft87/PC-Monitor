@@ -93,6 +93,14 @@ screen_ram_t *screen_ram_create(lv_display_t *disp)
     return s;
 }
 
+/**
+ * @brief Get the screen object (for screensaver restore)
+ */
+lv_obj_t *screen_ram_get_screen(screen_ram_t *s)
+{
+    return s ? s->screen : NULL;
+}
+
 void screen_ram_update(screen_ram_t *s, const pc_stats_t *stats)
 {
     if (!s) return;
