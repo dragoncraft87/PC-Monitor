@@ -161,8 +161,10 @@ void screen_network_update(screen_network_t *s, const pc_stats_t *stats)
     int up_scaled = (int)((stats->net_up_mbps / 125.0f) * 100.0f);
 
     if (down_scaled > 100) down_scaled = 100;
+    if (down_scaled < 0) down_scaled = 0;
     if (up_scaled > 100) up_scaled = 100;
-
+    if (up_scaled < 0) up_scaled = 0;
+    
     lv_chart_set_next_value(s->chart, s->ser_down, down_scaled);
     lv_chart_set_next_value(s->chart, s->ser_up, up_scaled);
 

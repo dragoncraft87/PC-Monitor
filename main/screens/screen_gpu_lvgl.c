@@ -129,23 +129,30 @@ void screen_gpu_update(screen_gpu_t *s, const pc_stats_t *stats)
 {
     if (!s) return;
 
-    /* Update arc */
-    lv_arc_set_value(s->arc, stats->gpu_percent);
+    /* 1. Clamping für den Arc (Sicherheit gegen Werte > 100) */
+    int gpu_val = stats->gpu_percent;
+    if (gpu_val > 100) gpu_val = 100;
+    if (gpu_val < 0) gpu_val = 0;
 
-    /* Update percentage */
+    lv_arc_set_value(s->arc, gpu_val);
+
+    /* Update percentage label */
     char buf[8];
     snprintf(buf, sizeof(buf), "%d%%", stats->gpu_percent);
     lv_label_set_text(s->label_percent, buf);
 
-    /* Update VRAM (matching SquareLine format: "X / 12 GB") */
-    char vram_buf[20];
-    snprintf(vram_buf, sizeof(vram_buf), "%.1f / 12 GB", stats->gpu_vram_used);
-    lv_label_set_text(s->label_vram, vram_buf);
-
-    /* Update temperature (no decimals) */
-    char temp_buf[16];
-    snprintf(temp_buf, sizeof(temp_buf), "%d°C", (int)stats->gpu_temp);
+    /* Update temperature */
+    char temp_buf[8];
+    snprintf(temp_buf, sizeof(temp_buf), "%.0f°C", stats->gpu_temp);
     lv_label_set_text(s->label_temp, temp_buf);
+
+    /* 2. Fix VRAM: Dynamische Anzeige statt hardcoded "12 GB" */
+    char vram_buf[32];
+    float total_vram = (stats->gpu_vram_total > 0.1f) ? stats->gpu_vram_total : 1.0f;
+
+    snprintf(vram_buf, sizeof(vram_buf), "%.1f / %.0f GB",
+             stats->gpu_vram_used, total_vram);
+    lv_label_set_text(s->label_vram, vram_buf);
 
     /* Temperature color */
     lv_color_t temp_color;
