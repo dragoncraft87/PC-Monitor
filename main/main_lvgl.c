@@ -200,78 +200,81 @@ static void parse_pc_data(const char *line)
     strncpy(buffer, line, sizeof(buffer) - 1);
     buffer[sizeof(buffer) - 1] = '\0';
 
-    xSemaphoreTake(stats_mutex, portMAX_DELAY);
-
+    // Parse into temporary struct first to avoid partial updates
+    pc_stats_t temp_stats = {0};
     int fields_parsed = 0;
     char *token = strtok(buffer, ",");
 
     while (token != NULL) {
         // CPU Usage
         if (strncmp(token, "CPU:", 4) == 0) {
-            pc_stats.cpu_percent = (uint8_t)atoi(token + 4);
+            temp_stats.cpu_percent = (uint8_t)atoi(token + 4);
             fields_parsed++;
         }
         // CPU Temperature
         else if (strncmp(token, "CPUT:", 5) == 0) {
-            pc_stats.cpu_temp = atof(token + 5);
+            temp_stats.cpu_temp = atof(token + 5);
             fields_parsed++;
         }
         // GPU Usage
         else if (strncmp(token, "GPU:", 4) == 0) {
-            pc_stats.gpu_percent = (uint8_t)atoi(token + 4);
+            temp_stats.gpu_percent = (uint8_t)atoi(token + 4);
             fields_parsed++;
         }
         // GPU Temperature
         else if (strncmp(token, "GPUT:", 5) == 0) {
-            pc_stats.gpu_temp = atof(token + 5);
+            temp_stats.gpu_temp = atof(token + 5);
             fields_parsed++;
         }
         // VRAM
         else if (strncmp(token, "VRAM:", 5) == 0) {
-            sscanf(token + 5, "%f/%f", &pc_stats.gpu_vram_used, &pc_stats.gpu_vram_total);
+            sscanf(token + 5, "%f/%f", &temp_stats.gpu_vram_used, &temp_stats.gpu_vram_total);
             fields_parsed++;
         }
         // RAM
         else if (strncmp(token, "RAM:", 4) == 0) {
-            sscanf(token + 4, "%f/%f", &pc_stats.ram_used_gb, &pc_stats.ram_total_gb);
-            if (pc_stats.ram_total_gb < 0.1f) {
-                pc_stats.ram_total_gb = 16.0f;
+            sscanf(token + 4, "%f/%f", &temp_stats.ram_used_gb, &temp_stats.ram_total_gb);
+            if (temp_stats.ram_total_gb < 0.1f) {
+                temp_stats.ram_total_gb = 16.0f;
             }
             fields_parsed++;
         }
         // Network Type
         else if (strncmp(token, "NET:", 4) == 0) {
-            strncpy(pc_stats.net_type, token + 4, sizeof(pc_stats.net_type) - 1);
-            pc_stats.net_type[sizeof(pc_stats.net_type) - 1] = '\0';
+            strncpy(temp_stats.net_type, token + 4, sizeof(temp_stats.net_type) - 1);
+            temp_stats.net_type[sizeof(temp_stats.net_type) - 1] = '\0';
             fields_parsed++;
         }
         // Network Speed
         else if (strncmp(token, "SPEED:", 6) == 0) {
-            strncpy(pc_stats.net_speed, token + 6, sizeof(pc_stats.net_speed) - 1);
-            pc_stats.net_speed[sizeof(pc_stats.net_speed) - 1] = '\0';
+            strncpy(temp_stats.net_speed, token + 6, sizeof(temp_stats.net_speed) - 1);
+            temp_stats.net_speed[sizeof(temp_stats.net_speed) - 1] = '\0';
             fields_parsed++;
         }
         // Download Speed
         else if (strncmp(token, "DOWN:", 5) == 0) {
-            pc_stats.net_down_mbps = atof(token + 5);
+            temp_stats.net_down_mbps = atof(token + 5);
             fields_parsed++;
         }
         // Upload Speed
         else if (strncmp(token, "UP:", 3) == 0) {
-            pc_stats.net_up_mbps = atof(token + 3);
+            temp_stats.net_up_mbps = atof(token + 3);
             fields_parsed++;
         }
 
         token = strtok(NULL, ",");
     }
 
-    // Update timestamp if we got ANY valid data
-    if (fields_parsed > 0) {
+    // Only commit to global state if we got enough fields (avoid partial/corrupt updates)
+    if (fields_parsed >= 5) {
+        xSemaphoreTake(stats_mutex, portMAX_DELAY);
+        pc_stats = temp_stats;
         last_data_ms = (uint32_t)(esp_timer_get_time() / 1000);
+        xSemaphoreGive(stats_mutex);
         ESP_LOGD(TAG, "Parsed %d fields, timestamp updated", fields_parsed);
+    } else {
+        ESP_LOGW(TAG, "Incomplete data: only %d fields parsed, discarding", fields_parsed);
     }
-
-    xSemaphoreGive(stats_mutex);
 }
 
 /* =============================================================================
@@ -282,6 +285,7 @@ static void usb_rx_task(void *arg)
     static uint8_t rx_buf[256];
     static char line_buf[LINE_BUFFER_SIZE];
     static int line_pos = 0;
+    static bool is_discarding = false;
 
     ESP_LOGI(TAG, "USB RX Task started");
 
@@ -293,22 +297,30 @@ static void usb_rx_task(void *arg)
             for (int i = 0; i < len; i++) {
                 uint8_t c = rx_buf[i];
 
-                // End of line - process it
+                // End of line - process it or end discard mode
                 if (c == '\n' || c == '\r') {
-                    if (line_pos > 0) {
+                    if (is_discarding) {
+                        // End of the oversized line, reset and resume normal operation
+                        is_discarding = false;
+                        line_pos = 0;
+                    } else if (line_pos > 0) {
                         line_buf[line_pos] = '\0';
                         parse_pc_data(line_buf);
                         line_pos = 0;  // Reset for next line
                     }
+                }
+                // In discard mode - ignore everything until newline
+                else if (is_discarding) {
+                    // Do nothing, wait for newline
                 }
                 // Normal character - add to buffer
                 else {
                     if (line_pos < LINE_BUFFER_SIZE - 1) {
                         line_buf[line_pos++] = (char)c;
                     } else {
-                        // Buffer overflow - discard and reset
-                        ESP_LOGW(TAG, "Line buffer overflow, discarding");
-                        line_pos = 0;
+                        // Buffer full - discard rest of this line
+                        ESP_LOGW(TAG, "Line buffer overflow, discarding rest of line");
+                        is_discarding = true;
                     }
                 }
             }

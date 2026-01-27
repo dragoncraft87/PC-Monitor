@@ -105,8 +105,15 @@ void screen_ram_update(screen_ram_t *s, const pc_stats_t *stats)
 {
     if (!s) return;
 
-    /* Calculate percentage */
-    int percent = (int)((stats->ram_used_gb / stats->ram_total_gb) * 100.0f);
+    /* Calculate percentage (guard against division by zero at boot) */
+    int percent;
+    if (stats->ram_total_gb > 0.1f) {
+        percent = (int)((stats->ram_used_gb / stats->ram_total_gb) * 100.0f);
+    } else {
+        percent = 0;
+    }
+    if (percent > 100) percent = 100;
+    if (percent < 0) percent = 0;
 
     /* Update bar */
     lv_bar_set_value(s->bar, percent, LV_ANIM_ON);

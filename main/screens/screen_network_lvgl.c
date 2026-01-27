@@ -156,9 +156,9 @@ void screen_network_update(screen_network_t *s, const pc_stats_t *stats)
     lv_label_set_text(s->label_up, up_buf);
 
     /* Add new data point to chart (scale to 0-100 range) */
-    /* Assuming max 20 MB/s for scaling */
-    int down_scaled = (int)((stats->net_down_mbps / 20.0f) * 100.0f);
-    int up_scaled = (int)((stats->net_up_mbps / 20.0f) * 100.0f);
+    /* Assuming max 125 MB/s for scaling */
+    int down_scaled = (int)((stats->net_down_mbps / 125.0f) * 100.0f);
+    int up_scaled = (int)((stats->net_up_mbps / 125.0f) * 100.0f);
 
     if (down_scaled > 100) down_scaled = 100;
     if (up_scaled > 100) up_scaled = 100;
