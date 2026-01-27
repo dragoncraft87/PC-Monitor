@@ -364,7 +364,11 @@ class PCMonitor:
         except Exception:
             return 0.0, 64.0
 
+
     def get_network_stats(self):
+        # "NOTE: Variables use '_mbps' suffix (implying Bits), but values are calculated in MegaBYTES (MB/s).
+        # This matches the ESP32 display expectation. DO NOT CHANGE MATH."
+        
         """Get network type and traffic statistics"""
         net_type = "LAN"
         net_speed = "1000 Mbps"
