@@ -3,7 +3,7 @@
  * @brief CPU Gauge Screen (Display 1) - LVGL Implementation
  *
  * Design based on SquareLine Studio (SquareLine/screens/ui_Screen1.c):
- * - Ring gauge (Arc widget) showing CPU percentage (0-120 range)
+ * - Ring gauge (Arc widget) showing CPU percentage (0-100 range)
  * - Green arc (#40FF64) on dark gray background (#55555C)
  * - Center text: "CPU" (top), percentage value (center), temperature (bottom)
  * - Temperature changes color based on value
@@ -52,8 +52,8 @@ screen_cpu_t *screen_cpu_create(lv_display_t *disp)
                        LV_OBJ_FLAG_SCROLL_ELASTIC | LV_OBJ_FLAG_SCROLL_MOMENTUM |
                        LV_OBJ_FLAG_SCROLL_CHAIN);
 
-    /* Arc configuration - 0-120 range for CPU percentage */
-    lv_arc_set_range(s->arc, 0, 120);
+    /* Arc configuration - 0-100 range for CPU percentage */
+    lv_arc_set_range(s->arc, 0, 100);
     lv_arc_set_value(s->arc, 0);
     lv_arc_set_bg_angles(s->arc, 135, 45);  /* Bottom-left to top-right */
     lv_arc_set_rotation(s->arc, 0);
@@ -125,7 +125,7 @@ screen_cpu_t *screen_cpu_create(lv_display_t *disp)
 /**
  * @brief Update CPU screen with new data
  *
- * Note: Arc range is 0-120, so we map CPU percentage (0-100) to this range
+ * Note: Arc range is 0-100, so we map CPU percentage (0-100) to this range
  * This allows for visual overdrive effect if CPU > 100% (rare but possible with turbo)
  */
 /**
@@ -140,9 +140,9 @@ void screen_cpu_update(screen_cpu_t *s, const pc_stats_t *stats)
 {
     if (!s) return;
 
-    /* Update arc value - clamp to 120 max */
+    /* Update arc value - clamp to 100 max */
     int arc_value = stats->cpu_percent;
-    if (arc_value > 120) arc_value = 120;
+    if (arc_value > 100) arc_value = 100;
     lv_arc_set_value(s->arc, arc_value);
 
     /* Update percentage label */
