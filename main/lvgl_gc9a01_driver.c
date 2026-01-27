@@ -44,6 +44,9 @@ static void lvgl_flush_cb(lv_display_t *disp, const lv_area_t *area, uint8_t *px
     int y1 = area->y1;
     int y2 = area->y2;
 
+    // SPI LCD is big-endian, swap RGB565 byte order before sending
+    lv_draw_sw_rgb565_swap(px_map, (x2 + 1 - x1) * (y2 + 1 - y1));
+
     // BLOCKING: With queue_depth=1, this waits until SPI transfer is done
     esp_lcd_panel_draw_bitmap(handle->panel_handle, x1, y1, x2 + 1, y2 + 1, px_map);
 
