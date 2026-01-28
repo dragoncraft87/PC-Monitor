@@ -1,221 +1,181 @@
-# 🖥️ PC Monitor - 4x Display System
+# Scarab Monitor
 
-A real-time PC monitoring system with 4 round GC9A01 displays showing CPU, GPU, RAM, and Network stats. Powered by ESP32-S3 and LVGL.
+**Desert-Spec Hardware Monitor** for ESP32-S3 with 4 round GC9A01 displays.
 
-![PC Monitor Setup](docs/images/setup.jpg)
-*Photo placeholder - add your build here!*
+Real-time visualization of PC hardware stats: CPU, GPU, RAM, and Network.
 
-## ✨ Features
+## Features
 
-### Hardware
-- **4x GC9A01 Round Displays** (240x240px each)
-- **ESP32-S3-DevKitC N16R8** (16MB Flash, 8MB PSRAM)
-- **Real-time Updates** (1 second refresh rate)
-- **USB Powered** (no external PSU needed)
+### Visualization
+- **CPU Screen**: Load percentage (arc), temperature with color coding
+- **GPU Screen**: Load, temperature, VRAM usage
+- **RAM Screen**: Used/Total with visual bar
+- **Network Screen**: Type (LAN/WLAN), speed, upload/download rates
 
-### Software
-- **Windows System Tray Manager** - Start/stop monitoring with one click
-- **LibreHardwareMonitor Integration** - Accurate sensor readings without external dependencies
-- **Auto-detection** - Finds ESP32 automatically
-- **Autostart Support** - Add to Windows startup easily
+### Operating Modes
 
-## 🎯 What It Shows
+| Mode | Requirements | Features |
+|------|--------------|----------|
+| **Full Mode** | Admin rights | Ring-0 access via LibreHardwareMonitor, exact CPU/GPU temperatures |
+| **Lite Mode** | User rights | WMI/PerformanceCounter fallback, CPU temp shows "N/A" |
 
-| Display | Info Displayed |
-|---------|---------------|
-| **Display 1** | CPU Usage (%) + Temperature (°C) |
-| **Display 2** | GPU Usage (%) + Temperature + VRAM |
-| **Display 3** | RAM Usage (Used / Total GB) |
-| **Display 4** | Network Traffic (Download / Upload MB/s) |
+### Desert-Spec Stability
+- **Handshake Protocol**: `WHO_ARE_YOU?` → `SCARAB_CLIENT_OK`
+- **Infinite Reconnect**: Auto-reconnects on disconnect
+- **Graceful Shutdown**: Clean exit, no zombie threads
+- **Smart Port Discovery**: Skips JTAG/Debug ports automatically
+- **Screensaver**: Retro game icons after 30s idle
 
-## 📸 Screenshots
+## Hardware Setup
 
-*Add your screenshots here!*
+### Components
+- **MCU**: ESP32-S3 (with PSRAM recommended)
+- **Displays**: 4x GC9A01 240x240 Round LCD (SPI)
 
-```
-[CPU Display]  [GPU Display]  [RAM Display]  [Network Display]
-     45%            72%          8.2/16 GB      ↓2.3 ↑0.5 MB/s
-    62.5°C         68.3°C
-```
+### Pinout (from code)
 
-## 🚀 Quick Start
+All displays share the SPI bus on **SPI2_HOST**:
 
-### For End Users (Just Want to Use It)
+| Signal | GPIO | Description |
+|--------|------|-------------|
+| **SCK** | 4 | SPI Clock (shared) |
+| **MOSI** | 5 | SPI Data (shared) |
 
-1. **Download** the latest `PC Monitor Manager.exe` from releases
-2. **Download** `LibreHardwareMonitorLib.dll` from [LibreHardwareMonitor releases](https://github.com/LibreHardwareMonitor/LibreHardwareMonitor/releases)
-3. **Place DLL** in the same folder as `python/pc_monitor.py`
-4. **Run** `PC Monitor Manager.exe` as Administrator
-5. **Right-click** the tray icon → "Start Monitoring"
-6. Done! Your displays should light up
+Individual display pins:
 
-### For Developers (Want to Build It)
+| Display | CS | DC | RST |
+|---------|-----|-----|-----|
+| **CPU** | 12 | 11 | 13 |
+| **GPU** | 9 | 46 | 10 |
+| **RAM** | 8 | 18 | 3 |
+| **Network** | 16 | 15 | 17 |
 
-See **[docs/SOFTWARE.md](docs/SOFTWARE.md)** for detailed installation and build instructions.
-
-## 📦 What's Included
+### Wiring Diagram
 
 ```
-pc-monitor-poc/
-├── python/
-│   ├── pc_monitor.py                # Main monitoring script
-│   └── LibreHardwareMonitorLib.dll  # (Download separately)
-├── main/
-│   ├── main_lvgl.c                  # ESP32 firmware
-│   └── lv_conf.h                    # LVGL configuration
-├── docs/
-│   ├── SOFTWARE.md                  # Software setup guide
-│   └── HARDWARE.md                  # Hardware build guide
-├── pc_monitor_tray.py               # System tray manager
-├── PC Monitor Manager.spec          # PyInstaller build spec
-├── requirements.txt                 # Python dependencies
-└── README.md                        # This file
+ESP32-S3                    GC9A01 Displays
+─────────                   ───────────────
+GPIO 4  (SCK)  ─────────┬── SCK (all 4 displays)
+GPIO 5  (MOSI) ─────────┴── SDA (all 4 displays)
+
+GPIO 12 (CS)   ───────────── CS  (CPU)
+GPIO 11 (DC)   ───────────── DC  (CPU)
+GPIO 13 (RST)  ───────────── RST (CPU)
+
+GPIO 9  (CS)   ───────────── CS  (GPU)
+GPIO 46 (DC)   ───────────── DC  (GPU)
+GPIO 10 (RST)  ───────────── RST (GPU)
+
+GPIO 8  (CS)   ───────────── CS  (RAM)
+GPIO 18 (DC)   ───────────── DC  (RAM)
+GPIO 3  (RST)  ───────────── RST (RAM)
+
+GPIO 16 (CS)   ───────────── CS  (Network)
+GPIO 15 (DC)   ───────────── DC  (Network)
+GPIO 17 (RST)  ───────────── RST (Network)
+
+3.3V ──────────┬── VCC (all displays)
+GND  ──────────┴── GND (all displays)
 ```
 
-## 🛠️ Building From Source
+## Installation (Windows Client)
 
-### Step 1: Hardware Assembly
+### Portable Installation
 
-Follow **[docs/HARDWARE.md](docs/HARDWARE.md)** for:
-- Wiring diagrams
-- Pin connections
-- Power requirements
-- Assembly tips
+1. Download the latest release ZIP
+2. Extract to desired location (e.g., `C:\Tools\ScarabMonitor\`)
+3. Run `install_autostart.ps1` (Right-click → "Run with PowerShell")
+4. Choose installation mode:
+   - **[1] Full Mode**: Task Scheduler with Admin (recommended)
+   - **[2] Lite Mode**: Registry Run without Admin
 
-### Step 2: Flash ESP32 Firmware
+### Manual Start
 
+```powershell
+# Full Mode (as Administrator)
+.\PCMonitorClient.exe
+
+# Lite Mode (as User)
+.\PCMonitorClient.exe
+```
+
+### Tray Icon Status
+
+| Color | Meaning |
+|-------|---------|
+| **Red (blinking)** | Initializing / Searching |
+| **Red (solid)** | Disconnected |
+| **Yellow** | Connected (Lite Mode) |
+| **Green** | Connected (Full Mode) |
+
+## Development
+
+### Windows Client
+
+**Requirements:**
+- Visual Studio 2022 or VS Code
+- .NET Framework 4.7.2 SDK
+
+**Build:**
+```powershell
+cd PCMonitorClient
+dotnet build -c Release
+```
+
+**Output:** `PCMonitorClient\bin\Release\net472\`
+
+### ESP32 Firmware
+
+**Requirements:**
+- ESP-IDF 5.x
+- LVGL 9.x (via managed components)
+
+**Build & Flash:**
 ```bash
-# Install ESP-IDF (if not already installed)
-# See: https://docs.espressif.com/projects/esp-idf/en/latest/esp32s3/get-started/
-
-# Navigate to project
-cd pc-monitor-poc
-
-# Configure and build
 idf.py build
-
-# Flash to ESP32
 idf.py -p COM3 flash monitor
 ```
 
-### Step 3: Install Windows Manager
-
-See **[docs/SOFTWARE.md](docs/SOFTWARE.md)** for:
-- Python environment setup
-- Downloading LibreHardwareMonitor DLL
-- Building the EXE
-- Installation instructions
-
-## 📋 Requirements
-
-### Hardware
-- ESP32-S3-DevKitC N16R8 (with 8MB PSRAM!)
-- 4x GC9A01 240x240 Round Displays
-- USB-C cable
-- Breadboard + jumper wires (or custom PCB)
-
-### Software
-- **ESP32**: ESP-IDF v5.0+
-- **Windows**: Windows 10/11 (64-bit) with Administrator rights
-- **Python**: 3.8+ (for development only)
-
-## 🎮 Usage
-
-### System Tray Manager
-
-Right-click the tray icon for options:
+## Project Structure
 
 ```
-┌─────────────────────────────┐
-│ Start Monitoring           │ ← Start sending data to ESP32
-│ Stop Monitoring            │ ← Stop monitoring
-├─────────────────────────────┤
-│ Add to Autostart           │ ← Run at Windows startup
-│ Remove from Autostart      │
-├─────────────────────────────┤
-│ Quit                       │ ← Close manager
-└─────────────────────────────┘
+scarab-monitor/
+├── main/                      # ESP32 Firmware
+│   ├── main_lvgl.c           # Main application
+│   ├── lvgl_gc9a01_driver.*  # Display driver
+│   ├── screens/              # LVGL screen implementations
+│   └── images/               # Screensaver assets
+├── PCMonitorClient/          # Windows Tray Client
+│   └── PCMonitorClient/
+│       ├── Program.cs        # Main + TrayContext
+│       ├── HardwareCollector.cs
+│       ├── StatusForm.cs
+│       └── install_autostart.ps1
+├── CMakeLists.txt            # ESP-IDF build
+├── lv_conf.h                 # LVGL configuration
+└── sdkconfig                 # ESP-IDF settings
 ```
 
-**Icon Color:**
-- 🔴 Red = Monitoring stopped
-- 🟢 Green = Monitoring active
+## Serial Protocol
 
-## 🔧 Configuration
+Data format sent from PC to ESP32 (115200 baud):
 
-### Display Layout
+```
+CPU:<load>,CPUT:<temp>,GPU:<load>,GPUT:<temp>,VRAM:<used>/<total>,RAM:<used>/<total>,NET:<type>,SPEED:<speed>,DOWN:<mbps>,UP:<mbps>\n
+```
 
-Displays are connected to ESP32 via SPI:
+Example:
+```
+CPU:45,CPUT:62.5,GPU:30,GPUT:55.0,VRAM:4.2/12.0,RAM:16.5/32.0,NET:LAN,SPEED:1000 Mbps,DOWN:125.5,UP:10.2
+```
 
-| Display | GPIO CS | GPIO DC | GPIO RST |
-|---------|---------|---------|----------|
-| CPU     | 11      | 12      | 13       |
-| GPU     | 10      | 9       | 46       |
-| RAM     | 3       | 8       | 18       |
-| Network | 15      | 16      | 17       |
+Special values:
+- `-1` = Sensor error / Not available (displays "N/A")
 
-Shared pins (all displays):
-- **SCK**: GPIO 4
-- **MOSI**: GPIO 5
-- **VCC**: 3.3V
-- **GND**: GND
+## License
 
-### Customization
-
-Want to change what's displayed?
-
-1. **ESP32 Firmware**: Edit `main/main_lvgl.c`
-2. **Data Format**: Edit `python/pc_monitor.py`
-3. **Display Colors**: Modify LVGL styles in firmware
-
-## 📚 Documentation
-
-- **[SOFTWARE.md](docs/SOFTWARE.md)** - Software installation, building EXE, usage
-- **[HARDWARE.md](docs/HARDWARE.md)** - Wiring, assembly, 3D printing files
-
-## 🐛 Troubleshooting
-
-### Displays stay black
-→ Check power connections (VCC + GND to all displays)
-
-### ESP32 not detected
-→ Check USB cable, try different port, verify COM port in Device Manager
-
-### "LibreHardwareMonitor DLL not found"
-→ Download from [LibreHardwareMonitor releases](https://github.com/LibreHardwareMonitor/LibreHardwareMonitor/releases) and place `LibreHardwareMonitorLib.dll` in `python/` folder
-
-### Monitoring won't start
-→ Run `PC Monitor Manager.exe` as Administrator (required for hardware sensors)
-
-### "Access Denied" or sensor errors
-→ LibreHardwareMonitor requires admin rights to read hardware sensors
-
-## 🤝 Contributing
-
-Contributions welcome! Please:
-
-1. Fork the repo
-2. Create a feature branch (`git checkout -b feature/amazing-feature`)
-3. Commit changes (`git commit -m 'Add amazing feature'`)
-4. Push to branch (`git push origin feature/amazing-feature`)
-5. Open a Pull Request
-
-## 📄 License
-
-This project is licensed under the MIT License.
-
-## 🙏 Acknowledgments
-
-- [LVGL](https://lvgl.io/) - Embedded GUI library
-- [LibreHardwareMonitor](https://github.com/LibreHardwareMonitor/LibreHardwareMonitor) - Hardware monitoring
-- [ESP-IDF](https://github.com/espressif/esp-idf) - ESP32 framework
-- GC9A01 display drivers
-
-## 💬 Support
-
-- **Issues**: [GitHub Issues](https://github.com/yourname/pc-monitor/issues)
-- **Discussions**: [GitHub Discussions](https://github.com/yourname/pc-monitor/discussions)
+MIT License - See LICENSE file for details.
 
 ---
 
-**Made with ❤️ for PC hardware enthusiasts**
+*Desert-Spec Edition - Built for reliability in harsh conditions.*

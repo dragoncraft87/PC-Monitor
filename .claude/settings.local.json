@@ -31,7 +31,8 @@
       "Bash(Remove-Item -Recurse -Force bin, obj -ErrorAction SilentlyContinue)",
       "Bash(dotnet restore:*)",
       "Bash(Remove-Item -Recurse -Force -ErrorAction SilentlyContinue bin, obj)",
-      "Bash(ls \"c:\\\\Users\\\\richa\\\\Desktop\\\\pc-monitor-poc\\\\PCMonitorClient\\\\PCMonitorClient\\\\bin\\\\Release\\\\net472\"\" | findstr -i \"NvAPI \")"
+      "Bash(ls \"c:\\\\Users\\\\richa\\\\Desktop\\\\pc-monitor-poc\\\\PCMonitorClient\\\\PCMonitorClient\\\\bin\\\\Release\\\\net472\"\" | findstr -i \"NvAPI \")",
+      "Bash(powershell -Command:*)"
     ],
     "deny": [],
     "ask": []
