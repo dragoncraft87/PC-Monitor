@@ -27,7 +27,11 @@
       "Bash(taskkill:*)",
       "Bash(tree:*)",
       "Bash(ls \"c:\\\\Users\\\\richa\\\\Desktop\\\\pc-monitor-poc\\\\PCMonitorClient\\\\PCMonitorClient\\\\libs\"\" 2>/dev/null || echo \"LIBS_DIR_NOT_FOUND \")",
-      "Bash(dotnet clean:*)"
+      "Bash(dotnet clean:*)",
+      "Bash(Remove-Item -Recurse -Force bin, obj -ErrorAction SilentlyContinue)",
+      "Bash(dotnet restore:*)",
+      "Bash(Remove-Item -Recurse -Force -ErrorAction SilentlyContinue bin, obj)",
+      "Bash(ls \"c:\\\\Users\\\\richa\\\\Desktop\\\\pc-monitor-poc\\\\PCMonitorClient\\\\PCMonitorClient\\\\bin\\\\Release\\\\net472\"\" | findstr -i \"NvAPI \")"
     ],
     "deny": [],
     "ask": []

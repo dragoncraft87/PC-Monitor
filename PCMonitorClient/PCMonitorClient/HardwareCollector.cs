@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Linq;
+using System.Management;
 using System.Net.NetworkInformation;
 using System.Net.Sockets;
 using System.Threading;
@@ -28,20 +29,65 @@ namespace PCMonitorClient
 
     public sealed class HardwareCollector : IDisposable
     {
-        private readonly Computer _computer;
+        private Computer _computer;
         private readonly UpdateVisitor _visitor = new UpdateVisitor();
-        private readonly bool _nvApiAvailable;
+        private bool _nvApiAvailable;
         private PhysicalGPU _gpu;
 
         // Network perf counters
         private PerformanceCounter _netBytesRecv;
         private PerformanceCounter _netBytesSent;
 
+        // Lite Mode: WMI-based CPU fallback
+        private PerformanceCounter _cpuCounter;
+
+        /// <summary>
+        /// True if running without admin rights (limited sensor access).
+        /// </summary>
+        public bool IsLiteMode { get; private set; }
+
+        /// <summary>
+        /// Human-readable status message for UI.
+        /// </summary>
+        public string InitStatus { get; private set; }
+
         public HardwareCollector()
         {
             Console.WriteLine("  [System]   Process Architecture: " + (Environment.Is64BitProcess ? "x64" : "x86"));
+            Console.WriteLine("  [System]   Admin: " + (IsAdmin() ? "YES" : "NO"));
 
-            // --- NvAPI ---
+            IsLiteMode = false;
+            InitStatus = "";
+
+            // --- Try NvAPI first (works without admin for basic GPU info) ---
+            InitNvApi();
+
+            // --- Try LibreHardwareMonitor (requires admin for Ring0) ---
+            if (!InitLibreHardwareMonitor())
+            {
+                // Ring0 failed - switch to Lite Mode
+                IsLiteMode = true;
+                InitStatus = "Lite Mode (no admin rights)";
+                Console.WriteLine("  [LHM]      Switching to LITE MODE");
+
+                // Initialize WMI-based CPU counter as fallback
+                InitLiteModeFallbacks();
+            }
+            else
+            {
+                InitStatus = "Full Mode (admin)";
+            }
+
+            // --- Network PerformanceCounters (works without admin) ---
+            InitNetwork();
+        }
+
+        // ========================================================================
+        //  Initialization
+        // ========================================================================
+
+        private void InitNvApi()
+        {
             try
             {
                 NVIDIA.Initialize();
@@ -58,42 +104,108 @@ namespace PCMonitorClient
                 _nvApiAvailable = false;
                 Console.WriteLine("  [NvAPI]    FAIL - " + ex.Message);
             }
+        }
 
-            // --- LibreHardwareMonitor ---
-            _computer = new Computer
+        private bool InitLibreHardwareMonitor()
+        {
+            try
             {
-                IsCpuEnabled = true,
-                IsMemoryEnabled = true,
-                IsMotherboardEnabled = true,
-                IsControllerEnabled = true,
-                IsGpuEnabled = !_nvApiAvailable,
-                IsStorageEnabled = false,
-                IsNetworkEnabled = false
-            };
-            _computer.Open();
-            Console.WriteLine("  [LHM]      Computer opened (Ring0 driver loaded)");
+                _computer = new Computer
+                {
+                    IsCpuEnabled = true,
+                    IsMemoryEnabled = true,
+                    IsMotherboardEnabled = true,
+                    IsControllerEnabled = true,
+                    IsGpuEnabled = !_nvApiAvailable,
+                    IsStorageEnabled = false,
+                    IsNetworkEnabled = false
+                };
 
-            // Wait for Ring0 driver to finish scanning buses (SMBus, LPC, etc.)
-            Console.WriteLine("  [LHM]      Waiting 2s for bus scan...");
-            Thread.Sleep(2000);
+                // This is where Ring0 driver loads - may fail without admin
+                _computer.Open();
+                Console.WriteLine("  [LHM]      Computer opened (Ring0 driver loaded)");
 
-            // First update pass
-            _computer.Accept(_visitor);
+                // Wait for Ring0 driver to finish scanning buses
+                Console.WriteLine("  [LHM]      Waiting 2s for bus scan...");
+                Thread.Sleep(2000);
 
-            // Second update pass — some sensors (SuperIO) need two reads to populate
-            Thread.Sleep(500);
-            _computer.Accept(_visitor);
+                // First update pass
+                _computer.Accept(_visitor);
 
-            // Debug: dump ALL hardware nodes + temperature sensors recursively
-            Console.WriteLine("  [LHM]      --- Full Hardware & Temperature Sensor Dump ---");
-            foreach (var hw in _computer.Hardware)
-            {
-                DumpHardwareTemps(hw, 0);
+                // Second update pass — some sensors need two reads
+                Thread.Sleep(500);
+                _computer.Accept(_visitor);
+
+                // Debug: dump hardware nodes
+                Console.WriteLine("  [LHM]      --- Hardware Dump ---");
+                foreach (var hw in _computer.Hardware)
+                {
+                    DumpHardwareTemps(hw, 0);
+                }
+                Console.WriteLine("  [LHM]      --- End Dump ---");
+
+                return true;
             }
-            Console.WriteLine("  [LHM]      --- End Sensor Dump ---");
+            catch (UnauthorizedAccessException ex)
+            {
+                Console.WriteLine("  [LHM]      FAIL (UnauthorizedAccess) - " + ex.Message);
+                SafeCloseComputer();
+                return false;
+            }
+            catch (Exception ex)
+            {
+                // Ring0 driver failed to load (common without admin)
+                Console.WriteLine("  [LHM]      FAIL - " + ex.Message);
+                SafeCloseComputer();
+                return false;
+            }
+        }
 
-            // --- Network PerformanceCounters ---
-            InitNetwork();
+        private void SafeCloseComputer()
+        {
+            if (_computer != null)
+            {
+                try { _computer.Close(); } catch { }
+                _computer = null;
+            }
+        }
+
+        private void InitLiteModeFallbacks()
+        {
+            // WMI-based CPU usage counter (works without admin)
+            try
+            {
+                _cpuCounter = new PerformanceCounter("Processor", "% Processor Time", "_Total");
+                _cpuCounter.NextValue(); // First call returns 0
+                Console.WriteLine("  [Lite]     CPU PerformanceCounter initialized");
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine("  [Lite]     CPU counter FAIL - " + ex.Message);
+            }
+
+            // Initialize a minimal Computer for RAM only (usually works without Ring0)
+            try
+            {
+                _computer = new Computer
+                {
+                    IsCpuEnabled = false,
+                    IsMemoryEnabled = true,
+                    IsMotherboardEnabled = false,
+                    IsControllerEnabled = false,
+                    IsGpuEnabled = false,
+                    IsStorageEnabled = false,
+                    IsNetworkEnabled = false
+                };
+                _computer.Open();
+                _computer.Accept(_visitor);
+                Console.WriteLine("  [Lite]     RAM monitoring OK");
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine("  [Lite]     RAM monitoring FAIL - " + ex.Message);
+                SafeCloseComputer();
+            }
         }
 
         private static void DumpHardwareTemps(IHardware hw, int depth)
@@ -199,22 +311,35 @@ namespace PCMonitorClient
         {
             var stats = new SystemStats();
 
-            _computer.Accept(_visitor);
+            if (IsLiteMode)
+            {
+                CollectCpuLite(stats);
+                CollectRamLite(stats);
+                CollectGpuLite(stats);
+            }
+            else
+            {
+                if (_computer != null)
+                    _computer.Accept(_visitor);
 
-            CollectCpu(stats);
-            CollectRam(stats);
-            CollectGpu(stats);
+                CollectCpu(stats);
+                CollectRam(stats);
+                CollectGpu(stats);
+            }
+
             CollectNetwork(stats);
 
             return stats;
         }
 
         // ========================================================================
-        //  CPU
+        //  CPU (Full Mode)
         // ========================================================================
 
         private void CollectCpu(SystemStats s)
         {
+            if (_computer == null) return;
+
             try
             {
                 foreach (var hw in _computer.Hardware)
@@ -223,19 +348,18 @@ namespace PCMonitorClient
 
                     var allSensors = GetAllSensorsRecursive(hw).ToList();
 
-                    // --- Load: 0 is valid (idle), null means sensor missing ---
+                    // --- Load ---
                     foreach (var sensor in allSensors)
                     {
                         if (sensor.SensorType == SensorType.Load && sensor.Name == "CPU Total")
                         {
                             if (sensor.Value.HasValue)
                                 s.CpuLoad = sensor.Value.Value;
-                            // else stays -1
                             break;
                         }
                     }
 
-                    // --- Temp: 0 means sensor returned nothing useful -> keep -1 ---
+                    // --- Temp ---
                     float rawTemp = FindBestTempFromSensors(allSensors,
                         "Package", "Core Max", "Core Average", "Tctl");
 
@@ -249,6 +373,26 @@ namespace PCMonitorClient
                 }
             }
             catch { /* sensor read failed */ }
+        }
+
+        // ========================================================================
+        //  CPU (Lite Mode - WMI/PerformanceCounter)
+        // ========================================================================
+
+        private void CollectCpuLite(SystemStats s)
+        {
+            // CPU Load via PerformanceCounter
+            try
+            {
+                if (_cpuCounter != null)
+                {
+                    s.CpuLoad = _cpuCounter.NextValue();
+                }
+            }
+            catch { }
+
+            // CPU Temp - not available in Lite Mode
+            s.CpuTemp = -1f;
         }
 
         private static float FindBestTempFromSensors(List<ISensor> sensors, params string[] priorities)
@@ -278,6 +422,8 @@ namespace PCMonitorClient
 
         private float FindMotherboardCpuTemp()
         {
+            if (_computer == null) return 0f;
+
             foreach (var hw in _computer.Hardware)
             {
                 if (hw.HardwareType != HardwareType.Motherboard) continue;
@@ -290,11 +436,13 @@ namespace PCMonitorClient
         }
 
         // ========================================================================
-        //  RAM
+        //  RAM (Full Mode)
         // ========================================================================
 
         private void CollectRam(SystemStats s)
         {
+            if (_computer == null) return;
+
             try
             {
                 foreach (var hw in _computer.Hardware)
@@ -322,7 +470,43 @@ namespace PCMonitorClient
         }
 
         // ========================================================================
-        //  GPU
+        //  RAM (Lite Mode - WMI)
+        // ========================================================================
+
+        private void CollectRamLite(SystemStats s)
+        {
+            // Try LibreHardwareMonitor first (sometimes works without Ring0)
+            if (_computer != null)
+            {
+                try
+                {
+                    _computer.Accept(_visitor);
+                    CollectRam(s);
+                    if (s.RamUsedGb > 0f) return;
+                }
+                catch { }
+            }
+
+            // Fallback: WMI
+            try
+            {
+                using (var searcher = new ManagementObjectSearcher("SELECT TotalVisibleMemorySize, FreePhysicalMemory FROM Win32_OperatingSystem"))
+                {
+                    foreach (ManagementObject obj in searcher.Get())
+                    {
+                        float totalKb = Convert.ToSingle(obj["TotalVisibleMemorySize"]);
+                        float freeKb = Convert.ToSingle(obj["FreePhysicalMemory"]);
+                        s.RamTotalGb = totalKb / (1024f * 1024f);
+                        s.RamUsedGb = (totalKb - freeKb) / (1024f * 1024f);
+                        break;
+                    }
+                }
+            }
+            catch { }
+        }
+
+        // ========================================================================
+        //  GPU (Full Mode)
         // ========================================================================
 
         private void CollectGpu(SystemStats s)
@@ -361,6 +545,8 @@ namespace PCMonitorClient
 
         private void CollectGpuLhm(SystemStats s)
         {
+            if (_computer == null) return;
+
             try
             {
                 foreach (var hw in _computer.Hardware)
@@ -388,6 +574,30 @@ namespace PCMonitorClient
         }
 
         // ========================================================================
+        //  GPU (Lite Mode - NvAPI only, no Ring0 needed)
+        // ========================================================================
+
+        private void CollectGpuLite(SystemStats s)
+        {
+            // NvAPI works without admin for NVIDIA cards
+            if (_nvApiAvailable && _gpu != null)
+            {
+                try
+                {
+                    CollectGpuNvApi(s);
+                    return;
+                }
+                catch { }
+            }
+
+            // No GPU data available in Lite Mode without NvAPI
+            s.GpuLoad = -1f;
+            s.GpuTemp = -1f;
+            s.GpuVramUsed = -1f;
+            s.GpuVramTotal = -1f;
+        }
+
+        // ========================================================================
         //  Network
         // ========================================================================
 
@@ -409,9 +619,10 @@ namespace PCMonitorClient
 
         public void Dispose()
         {
-            _computer.Close();
-            if (_netBytesRecv != null) _netBytesRecv.Dispose();
-            if (_netBytesSent != null) _netBytesSent.Dispose();
+            SafeCloseComputer();
+            if (_netBytesRecv != null) { try { _netBytesRecv.Dispose(); } catch { } }
+            if (_netBytesSent != null) { try { _netBytesSent.Dispose(); } catch { } }
+            if (_cpuCounter != null) { try { _cpuCounter.Dispose(); } catch { } }
         }
 
         // ========================================================================
