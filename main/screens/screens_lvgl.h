@@ -23,12 +23,12 @@ extern "C" {
  * @brief PC Stats data structure
  */
 typedef struct {
-    // CPU
-    uint8_t cpu_percent;
+    // CPU (-1 = sensor error / N/A)
+    int16_t cpu_percent;
     float cpu_temp;
 
-    // GPU
-    uint8_t gpu_percent;
+    // GPU (-1 = sensor error / N/A)
+    int16_t gpu_percent;
     float gpu_temp;
     float gpu_vram_used;
     float gpu_vram_total;

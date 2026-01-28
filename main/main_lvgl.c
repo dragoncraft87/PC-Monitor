@@ -209,22 +209,22 @@ static void parse_pc_data(const char *line)
     char *token = strtok(buffer, ",");
 
     while (token != NULL) {
-        // CPU Usage
+        // CPU Usage (-1 = error)
         if (strncmp(token, "CPU:", 4) == 0) {
-            temp_stats.cpu_percent = (uint8_t)atoi(token + 4);
+            temp_stats.cpu_percent = (int16_t)atoi(token + 4);
             fields_parsed++;
         }
-        // CPU Temperature
+        // CPU Temperature (-1 = error)
         else if (strncmp(token, "CPUT:", 5) == 0) {
             temp_stats.cpu_temp = atof(token + 5);
             fields_parsed++;
         }
-        // GPU Usage
+        // GPU Usage (-1 = error)
         else if (strncmp(token, "GPU:", 4) == 0) {
-            temp_stats.gpu_percent = (uint8_t)atoi(token + 4);
+            temp_stats.gpu_percent = (int16_t)atoi(token + 4);
             fields_parsed++;
         }
-        // GPU Temperature
+        // GPU Temperature (-1 = error)
         else if (strncmp(token, "GPUT:", 5) == 0) {
             temp_stats.gpu_temp = atof(token + 5);
             fields_parsed++;
@@ -308,7 +308,16 @@ static void usb_rx_task(void *arg)
                         line_pos = 0;
                     } else if (line_pos > 0) {
                         line_buf[line_pos] = '\0';
-                        parse_pc_data(line_buf);
+
+                        // Handshake: respond to WHO_ARE_YOU? with identity
+                        if (strcmp(line_buf, "WHO_ARE_YOU?") == 0) {
+                            const char *response = "SCARAB_CLIENT_OK\n";
+                            usb_serial_jtag_write_bytes((const uint8_t *)response, strlen(response), pdMS_TO_TICKS(100));
+                            ESP_LOGI(TAG, "Handshake: WHO_ARE_YOU? -> SCARAB_CLIENT_OK");
+                        } else {
+                            parse_pc_data(line_buf);
+                        }
+
                         line_pos = 0;  // Reset for next line
                     }
                 }

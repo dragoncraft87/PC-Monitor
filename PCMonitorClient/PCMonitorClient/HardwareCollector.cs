@@ -223,20 +223,27 @@ namespace PCMonitorClient
 
                     var allSensors = GetAllSensorsRecursive(hw).ToList();
 
+                    // --- Load: 0 is valid (idle), null means sensor missing ---
                     foreach (var sensor in allSensors)
                     {
                         if (sensor.SensorType == SensorType.Load && sensor.Name == "CPU Total")
                         {
-                            s.CpuLoad = sensor.Value ?? 0f;
+                            if (sensor.Value.HasValue)
+                                s.CpuLoad = sensor.Value.Value;
+                            // else stays -1
                             break;
                         }
                     }
 
-                    s.CpuTemp = FindBestTempFromSensors(allSensors,
+                    // --- Temp: 0 means sensor returned nothing useful -> keep -1 ---
+                    float rawTemp = FindBestTempFromSensors(allSensors,
                         "Package", "Core Max", "Core Average", "Tctl");
 
-                    if (s.CpuTemp == 0f)
-                        s.CpuTemp = FindMotherboardCpuTemp();
+                    if (rawTemp <= 0f)
+                        rawTemp = FindMotherboardCpuTemp();
+
+                    if (rawTemp > 0f)
+                        s.CpuTemp = rawTemp;
 
                     break;
                 }
@@ -294,17 +301,20 @@ namespace PCMonitorClient
                 {
                     if (hw.HardwareType != HardwareType.Memory) continue;
 
-                    float used = 0f, available = 0f;
+                    float used = -1f, available = -1f;
                     foreach (var sensor in hw.Sensors)
                     {
                         if (sensor.SensorType == SensorType.Data && sensor.Name == "Memory Used")
-                            used = sensor.Value ?? 0f;
+                            used = sensor.Value ?? -1f;
                         if (sensor.SensorType == SensorType.Data && sensor.Name == "Memory Available")
-                            available = sensor.Value ?? 0f;
+                            available = sensor.Value ?? -1f;
                     }
 
-                    s.RamUsedGb = used;
-                    s.RamTotalGb = used + available;
+                    if (used > 0f && available >= 0f)
+                    {
+                        s.RamUsedGb = used;
+                        s.RamTotalGb = used + available;
+                    }
                     break;
                 }
             }
@@ -362,14 +372,14 @@ namespace PCMonitorClient
 
                     foreach (var sensor in GetAllSensorsRecursive(hw))
                     {
-                        if (sensor.SensorType == SensorType.Load && sensor.Name == "GPU Core")
-                            s.GpuLoad = sensor.Value ?? 0f;
-                        if (sensor.SensorType == SensorType.Temperature && sensor.Name == "GPU Core")
-                            s.GpuTemp = sensor.Value ?? 0f;
-                        if (sensor.SensorType == SensorType.SmallData && sensor.Name == "GPU Memory Used")
-                            s.GpuVramUsed = (sensor.Value ?? 0f) / 1024f;
-                        if (sensor.SensorType == SensorType.SmallData && sensor.Name == "GPU Memory Total")
-                            s.GpuVramTotal = (sensor.Value ?? 0f) / 1024f;
+                        if (sensor.SensorType == SensorType.Load && sensor.Name == "GPU Core" && sensor.Value.HasValue)
+                            s.GpuLoad = sensor.Value.Value;
+                        if (sensor.SensorType == SensorType.Temperature && sensor.Name == "GPU Core" && sensor.Value.HasValue && sensor.Value.Value > 0f)
+                            s.GpuTemp = sensor.Value.Value;
+                        if (sensor.SensorType == SensorType.SmallData && sensor.Name == "GPU Memory Used" && sensor.Value.HasValue)
+                            s.GpuVramUsed = sensor.Value.Value / 1024f;
+                        if (sensor.SensorType == SensorType.SmallData && sensor.Name == "GPU Memory Total" && sensor.Value.HasValue)
+                            s.GpuVramTotal = sensor.Value.Value / 1024f;
                     }
                     break;
                 }
@@ -402,6 +412,19 @@ namespace PCMonitorClient
             _computer.Close();
             if (_netBytesRecv != null) _netBytesRecv.Dispose();
             if (_netBytesSent != null) _netBytesSent.Dispose();
+        }
+
+        // ========================================================================
+        //  Admin Check
+        // ========================================================================
+
+        public static bool IsAdmin()
+        {
+            using (var identity = System.Security.Principal.WindowsIdentity.GetCurrent())
+            {
+                return new System.Security.Principal.WindowsPrincipal(identity)
+                       .IsInRole(System.Security.Principal.WindowsBuiltInRole.Administrator);
+            }
         }
     }
 }

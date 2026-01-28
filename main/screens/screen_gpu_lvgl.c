@@ -130,39 +130,52 @@ void screen_gpu_update(screen_gpu_t *s, const pc_stats_t *stats)
 {
     if (!s) return;
 
-    /* 1. Clamping für den Arc (Sicherheit gegen Werte > 100) */
-    int gpu_val = stats->gpu_percent;
-    if (gpu_val > 100) gpu_val = 100;
-    if (gpu_val < 0) gpu_val = 0;
-
-    lv_arc_set_value(s->arc, gpu_val);
-
-    /* Update percentage label */
-    char buf[8];
-    snprintf(buf, sizeof(buf), "%d%%", stats->gpu_percent);
-    lv_label_set_text(s->label_percent, buf);
-
-    /* Update temperature */
-    char temp_buf[8];
-    snprintf(temp_buf, sizeof(temp_buf), "%.0f°C", stats->gpu_temp);
-    lv_label_set_text(s->label_temp, temp_buf);
-
-    /* 2. Fix VRAM: Dynamische Anzeige statt hardcoded "12 GB" */
-    char vram_buf[32];
-    float total_vram = (stats->gpu_vram_total > 0.1f) ? stats->gpu_vram_total : 1.0f;
-
-    snprintf(vram_buf, sizeof(vram_buf), "%.1f / %.0f GB",
-             stats->gpu_vram_used, total_vram);
-    lv_label_set_text(s->label_vram, vram_buf);
-
-    /* Temperature color */
-    lv_color_t temp_color;
-    if (stats->gpu_temp > 75.0f) {
-        temp_color = lv_color_hex(0xFF4444);
-    } else if (stats->gpu_temp > 65.0f) {
-        temp_color = lv_color_hex(0xFF6B6B);
+    /* ---- Load ---- */
+    if (stats->gpu_percent < 0) {
+        lv_arc_set_value(s->arc, 0);
+        lv_label_set_text(s->label_percent, "N/A");
+        lv_obj_set_style_text_color(s->label_percent, lv_color_hex(0xFF4444), LV_PART_MAIN);
     } else {
-        temp_color = lv_color_hex(0x4CAF50);
+        int gpu_val = stats->gpu_percent;
+        if (gpu_val > 100) gpu_val = 100;
+        lv_arc_set_value(s->arc, gpu_val);
+
+        char buf[8];
+        snprintf(buf, sizeof(buf), "%d%%", stats->gpu_percent);
+        lv_label_set_text(s->label_percent, buf);
+        lv_obj_set_style_text_color(s->label_percent, lv_color_hex(0xFFFFFF), LV_PART_MAIN);
     }
-    lv_obj_set_style_text_color(s->label_temp, temp_color, 0);
+
+    /* ---- Temperature ---- */
+    if (stats->gpu_temp < 0.0f) {
+        lv_label_set_text(s->label_temp, "N/A");
+        lv_obj_set_style_text_color(s->label_temp, lv_color_hex(0xFF4444), 0);
+    } else {
+        char temp_buf[8];
+        snprintf(temp_buf, sizeof(temp_buf), "%.0f°C", stats->gpu_temp);
+        lv_label_set_text(s->label_temp, temp_buf);
+
+        lv_color_t temp_color;
+        if (stats->gpu_temp > 75.0f) {
+            temp_color = lv_color_hex(0xFF4444);
+        } else if (stats->gpu_temp > 65.0f) {
+            temp_color = lv_color_hex(0xFF6B6B);
+        } else {
+            temp_color = lv_color_hex(0x4CAF50);
+        }
+        lv_obj_set_style_text_color(s->label_temp, temp_color, 0);
+    }
+
+    /* ---- VRAM ---- */
+    if (stats->gpu_vram_total < 0.0f || stats->gpu_vram_used < 0.0f) {
+        lv_label_set_text(s->label_vram, "N/A");
+        lv_obj_set_style_text_color(s->label_vram, lv_color_hex(0xFF4444), 0);
+    } else {
+        char vram_buf[32];
+        float total_vram = (stats->gpu_vram_total > 0.1f) ? stats->gpu_vram_total : 1.0f;
+        snprintf(vram_buf, sizeof(vram_buf), "%.1f / %.0f GB",
+                 stats->gpu_vram_used, total_vram);
+        lv_label_set_text(s->label_vram, vram_buf);
+        lv_obj_set_style_text_color(s->label_vram, lv_color_hex(0x4CAF50), 0);
+    }
 }

@@ -141,29 +141,41 @@ void screen_cpu_update(screen_cpu_t *s, const pc_stats_t *stats)
 {
     if (!s) return;
 
-    /* Update arc value - clamp to 100 max */
-    int arc_value = stats->cpu_percent;
-    if (arc_value > 100) arc_value = 100;
-    lv_arc_set_value(s->arc, arc_value);
-
-    /* Update percentage label */
-    char buf[8];
-    snprintf(buf, sizeof(buf), "%d%%", stats->cpu_percent);
-    lv_label_set_text(s->label_percent, buf);
-
-    /* Update temperature label with degree symbol (no decimals) */
-    char temp_buf[16];
-    snprintf(temp_buf, sizeof(temp_buf), "%d°C", (int)stats->cpu_temp);
-    lv_label_set_text(s->label_temp, temp_buf);
-
-    /* Change temperature color based on value */
-    lv_color_t temp_color;
-    if (stats->cpu_temp > 70.0f) {
-        temp_color = lv_color_hex(0xFF4444); /* Bright Red */
-    } else if (stats->cpu_temp > 60.0f) {
-        temp_color = lv_color_hex(0xFF6B6B); /* Orange-Red */
+    /* ---- Load ---- */
+    if (stats->cpu_percent < 0) {
+        /* Sensor error */
+        lv_arc_set_value(s->arc, 0);
+        lv_label_set_text(s->label_percent, "N/A");
+        lv_obj_set_style_text_color(s->label_percent, lv_color_hex(0xFF4444), LV_PART_MAIN);
     } else {
-        temp_color = lv_color_hex(0x4CAF50); /* Green */
+        int arc_value = stats->cpu_percent;
+        if (arc_value > 100) arc_value = 100;
+        lv_arc_set_value(s->arc, arc_value);
+
+        char buf[8];
+        snprintf(buf, sizeof(buf), "%d%%", stats->cpu_percent);
+        lv_label_set_text(s->label_percent, buf);
+        lv_obj_set_style_text_color(s->label_percent, lv_color_hex(0xFFFFFF), LV_PART_MAIN);
     }
-    lv_obj_set_style_text_color(s->label_temp, temp_color, LV_PART_MAIN);
+
+    /* ---- Temperature ---- */
+    if (stats->cpu_temp < 0.0f) {
+        /* Sensor error */
+        lv_label_set_text(s->label_temp, "N/A");
+        lv_obj_set_style_text_color(s->label_temp, lv_color_hex(0xFF4444), LV_PART_MAIN);
+    } else {
+        char temp_buf[16];
+        snprintf(temp_buf, sizeof(temp_buf), "%d°C", (int)stats->cpu_temp);
+        lv_label_set_text(s->label_temp, temp_buf);
+
+        lv_color_t temp_color;
+        if (stats->cpu_temp > 70.0f) {
+            temp_color = lv_color_hex(0xFF4444); /* Bright Red */
+        } else if (stats->cpu_temp > 60.0f) {
+            temp_color = lv_color_hex(0xFF6B6B); /* Orange-Red */
+        } else {
+            temp_color = lv_color_hex(0x4CAF50); /* Green */
+        }
+        lv_obj_set_style_text_color(s->label_temp, temp_color, LV_PART_MAIN);
+    }
 }
