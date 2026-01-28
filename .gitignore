@@ -1,7 +1,49 @@
-# Ordner für VS Code und Entwicklungsumgebung
+# =============================================
+# ESP-IDF (Firmware)
+# =============================================
+build/
+managed_components/
+sdkconfig.old
+dependencies.lock
+
+# =============================================
+# .NET / C# (PCMonitorClient)
+# =============================================
+**/bin/
+**/obj/
+*.csproj.user
+*.user
+.vs/
+
+# =============================================
+# Python
+# =============================================
+__pycache__/
+*.pyc
+*.pyo
+dist/
+*.egg-info/
+.venv/
+venv/
+
+# =============================================
+# IDEs & Editors
+# =============================================
 .devcontainer/
 .vscode/
-managed_components
+.idea/
+*.swp
+*.swo
+*~
 
-# Build-Artefakte
-build/
+# =============================================
+# OS
+# =============================================
+.DS_Store
+Thumbs.db
+Desktop.ini
+
+# =============================================
+# Claude Code
+# =============================================
+.claude/

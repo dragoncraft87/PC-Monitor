@@ -17,7 +17,15 @@
       "Bash(git merge:*)",
       "Bash(git checkout:*)",
       "Bash(git add:*)",
-      "Bash(pip show:*)"
+      "Bash(pip show:*)",
+      "Bash(winget install:*)",
+      "Bash(export PATH=\"$PATH:/c/Program Files/dotnet\")",
+      "Bash(dotnet add:*)",
+      "Bash(dotnet add package:*)",
+      "Bash(dotnet build:*)",
+      "Bash(python3:*)",
+      "Bash(taskkill:*)",
+      "Bash(tree:*)"
     ],
     "deny": [],
     "ask": []
