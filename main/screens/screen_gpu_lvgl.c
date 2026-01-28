@@ -67,6 +67,7 @@ screen_gpu_t *screen_gpu_create(lv_display_t *disp)
     lv_obj_set_y(s->label_title, -45);
     lv_obj_set_align(s->label_title, LV_ALIGN_CENTER);
     lv_label_set_text(s->label_title, "3080 Ti");
+    lv_obj_set_style_text_color(s->label_title, lv_color_hex(0x76b900), LV_PART_MAIN | LV_STATE_DEFAULT); // NVIDIA Green
     lv_obj_set_style_text_align(s->label_title, LV_TEXT_ALIGN_CENTER, LV_PART_MAIN | LV_STATE_DEFAULT);
     lv_obj_set_style_text_font(s->label_title, &lv_font_montserrat_16, LV_PART_MAIN | LV_STATE_DEFAULT);
 

@@ -41,6 +41,7 @@ screen_ram_t *screen_ram_create(lv_display_t *disp)
     /* "RAM" Title */
     s->label_title = lv_label_create(s->screen);
     lv_label_set_text(s->label_title, "RAM");
+    lv_obj_set_style_text_color(s->label_title, lv_color_hex(0xECE81A), LV_PART_MAIN | LV_STATE_DEFAULT); // Corsair Yellow
     lv_obj_set_style_text_font(s->label_title, &lv_font_montserrat_16, 0);
     lv_obj_set_style_text_color(s->label_title, lv_color_make(0x88, 0x88, 0x88), 0);
     lv_obj_align(s->label_title, LV_ALIGN_TOP_MID, 0, 40);

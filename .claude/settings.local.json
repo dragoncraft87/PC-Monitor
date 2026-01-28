@@ -25,7 +25,9 @@
       "Bash(dotnet build:*)",
       "Bash(python3:*)",
       "Bash(taskkill:*)",
-      "Bash(tree:*)"
+      "Bash(tree:*)",
+      "Bash(ls \"c:\\\\Users\\\\richa\\\\Desktop\\\\pc-monitor-poc\\\\PCMonitorClient\\\\PCMonitorClient\\\\libs\"\" 2>/dev/null || echo \"LIBS_DIR_NOT_FOUND \")",
+      "Bash(dotnet clean:*)"
     ],
     "deny": [],
     "ask": []
