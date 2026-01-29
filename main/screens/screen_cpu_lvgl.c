@@ -13,14 +13,7 @@
 #include "screens_lvgl.h"
 #include <stdio.h>
 
-/* Widget handles */
-struct screen_cpu_t {
-    lv_obj_t *screen;
-    lv_obj_t *arc;
-    lv_obj_t *label_title;
-    lv_obj_t *label_percent;
-    lv_obj_t *label_temp;
-};
+/* Widget handles defined in screens_lvgl.h */
 
 /**
  * @brief Create CPU gauge screen

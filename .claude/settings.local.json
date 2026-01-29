@@ -32,7 +32,11 @@
       "Bash(dotnet restore:*)",
       "Bash(Remove-Item -Recurse -Force -ErrorAction SilentlyContinue bin, obj)",
       "Bash(ls \"c:\\\\Users\\\\richa\\\\Desktop\\\\pc-monitor-poc\\\\PCMonitorClient\\\\PCMonitorClient\\\\bin\\\\Release\\\\net472\"\" | findstr -i \"NvAPI \")",
-      "Bash(powershell -Command:*)"
+      "Bash(powershell -Command:*)",
+      "Bash(cmd //c \"C:\\\\Espressif\\\\frameworks\\\\esp-idf-v5.4.1\\\\export.bat && idf.py build\")",
+      "Bash(where:*)",
+      "Bash(source:*)",
+      "Bash(powershell:*)"
     ],
     "deny": [],
     "ask": []

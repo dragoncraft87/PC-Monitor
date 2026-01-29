@@ -11,14 +11,7 @@
 #include "screens_lvgl.h"
 #include <stdio.h>
 
-struct screen_gpu_t {
-    lv_obj_t *screen;
-    lv_obj_t *arc;
-    lv_obj_t *label_title;
-    lv_obj_t *label_percent;
-    lv_obj_t *label_temp;
-    lv_obj_t *label_vram;
-};
+/* Widget handles defined in screens_lvgl.h */
 
 screen_gpu_t *screen_gpu_create(lv_display_t *disp)
 {

@@ -12,22 +12,7 @@
 #include "screens_lvgl.h"
 #include <stdio.h>
 
-#define NETWORK_HISTORY_SIZE 60
-
-struct screen_network_t {
-    lv_obj_t *screen;
-    lv_obj_t *label_header;
-    lv_obj_t *label_conn_type;
-    lv_obj_t *label_speed;
-    lv_obj_t *chart;
-    lv_chart_series_t *ser_down;
-    lv_chart_series_t *ser_up;
-    lv_obj_t *label_down;
-    lv_obj_t *label_up;
-
-    /* Traffic history */
-    int history_index;
-};
+/* Widget handles and NETWORK_HISTORY_SIZE defined in screens_lvgl.h */
 
 screen_network_t *screen_network_create(lv_display_t *disp)
 {

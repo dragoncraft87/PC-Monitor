@@ -12,14 +12,7 @@
 #include "screens_lvgl.h"
 #include <stdio.h>
 
-struct screen_ram_t {
-    lv_obj_t *screen;
-    lv_obj_t *label_title;
-    lv_obj_t *label_value;
-    lv_obj_t *label_percent;
-    lv_obj_t *bar;
-    lv_obj_t *label_total;
-};
+/* Widget handles defined in screens_lvgl.h */
 
 screen_ram_t *screen_ram_create(lv_display_t *disp)
 {

@@ -14,39 +14,56 @@
 
 #include "lvgl.h"
 #include <stdint.h>
+#include "core/system_types.h"
 
 #ifdef __cplusplus
 extern "C" {
 #endif
 
 /**
- * @brief PC Stats data structure
+ * @brief Screen structures (exposed for theme access)
  */
-typedef struct {
-    // CPU (-1 = sensor error / N/A)
-    int16_t cpu_percent;
-    float cpu_temp;
+#define NETWORK_HISTORY_SIZE 60
 
-    // GPU (-1 = sensor error / N/A)
-    int16_t gpu_percent;
-    float gpu_temp;
-    float gpu_vram_used;
-    float gpu_vram_total;
+struct screen_cpu_t {
+    lv_obj_t *screen;
+    lv_obj_t *arc;
+    lv_obj_t *label_title;
+    lv_obj_t *label_percent;
+    lv_obj_t *label_temp;
+};
 
-    // RAM
-    float ram_used_gb;
-    float ram_total_gb;
+struct screen_gpu_t {
+    lv_obj_t *screen;
+    lv_obj_t *arc;
+    lv_obj_t *label_title;
+    lv_obj_t *label_percent;
+    lv_obj_t *label_temp;
+    lv_obj_t *label_vram;
+};
 
-    // Network
-    char net_type[16];      // "LAN" or "WiFi"
-    char net_speed[16];     // "1000 Mbps"
-    float net_down_mbps;
-    float net_up_mbps;
-} pc_stats_t;
+struct screen_ram_t {
+    lv_obj_t *screen;
+    lv_obj_t *label_title;
+    lv_obj_t *label_value;
+    lv_obj_t *label_percent;
+    lv_obj_t *bar;
+    lv_obj_t *label_total;
+};
 
-/**
- * @brief Screen handles (opaque structures)
- */
+struct screen_network_t {
+    lv_obj_t *screen;
+    lv_obj_t *label_header;
+    lv_obj_t *label_conn_type;
+    lv_obj_t *label_speed;
+    lv_obj_t *chart;
+    lv_chart_series_t *ser_down;
+    lv_chart_series_t *ser_up;
+    lv_obj_t *label_down;
+    lv_obj_t *label_up;
+    int history_index;
+};
+
 typedef struct screen_cpu_t screen_cpu_t;
 typedef struct screen_gpu_t screen_gpu_t;
 typedef struct screen_ram_t screen_ram_t;
