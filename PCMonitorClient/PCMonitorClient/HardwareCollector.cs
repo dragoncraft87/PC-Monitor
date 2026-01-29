@@ -5,6 +5,7 @@ using System.Linq;
 using System.Management;
 using System.Net.NetworkInformation;
 using System.Net.Sockets;
+using System.Text.RegularExpressions;
 using System.Threading;
 using LibreHardwareMonitor.Hardware;
 using NvAPIWrapper;
@@ -51,6 +52,35 @@ namespace PCMonitorClient
         /// </summary>
         public string InitStatus { get; private set; }
 
+        // ========================================================================
+        //  Hardware Identity (for sync with ESP)
+        // ========================================================================
+
+        /// <summary>
+        /// Clean CPU model name (e.g., "i9-7980XE")
+        /// </summary>
+        public string CpuName { get; private set; } = "CPU";
+
+        /// <summary>
+        /// Clean GPU model name (e.g., "RTX 3080 Ti")
+        /// </summary>
+        public string GpuName { get; private set; } = "GPU";
+
+        /// <summary>
+        /// Fixed RAM label
+        /// </summary>
+        public string RamName { get; } = "RAM";
+
+        /// <summary>
+        /// Network connection type (LAN/WLAN)
+        /// </summary>
+        public string NetName { get; private set; } = "LAN";
+
+        /// <summary>
+        /// CRC32 hash of combined hardware names for sync detection
+        /// </summary>
+        public string IdentityHash { get; private set; } = "00000000";
+
         public HardwareCollector()
         {
             Console.WriteLine("  [System]   Process Architecture: " + (Environment.Is64BitProcess ? "x64" : "x86"));
@@ -80,6 +110,9 @@ namespace PCMonitorClient
 
             // --- Network PerformanceCounters (works without admin) ---
             InitNetwork();
+
+            // --- Detect Hardware Identity ---
+            DetectHardwareIdentity();
         }
 
         // ========================================================================
@@ -636,6 +669,201 @@ namespace PCMonitorClient
                 return new System.Security.Principal.WindowsPrincipal(identity)
                        .IsInRole(System.Security.Principal.WindowsBuiltInRole.Administrator);
             }
+        }
+
+        // ========================================================================
+        //  Hardware Identity Detection
+        // ========================================================================
+
+        /// <summary>
+        /// Cleans up hardware names by removing common brand prefixes.
+        /// </summary>
+        public static string GetCleanName(string rawName, bool isCpu)
+        {
+            if (string.IsNullOrWhiteSpace(rawName))
+                return isCpu ? "CPU" : "GPU";
+
+            string clean = rawName;
+
+            // Remove common CPU brand prefixes
+            string[] cpuPrefixes = {
+                "Intel(R) Core(TM)", "Intel(R) Xeon(R)", "Intel(R) Celeron(R)",
+                "Intel(R) Pentium(R)", "Intel(R) Core(TM)2", "Intel(R)",
+                "AMD Ryzen", "AMD EPYC", "AMD Athlon", "AMD FX", "AMD"
+            };
+
+            // Remove common GPU brand prefixes
+            string[] gpuPrefixes = {
+                "NVIDIA GeForce", "NVIDIA Quadro", "NVIDIA Tesla", "NVIDIA",
+                "AMD Radeon RX", "AMD Radeon", "AMD",
+                "Intel(R) UHD Graphics", "Intel(R) HD Graphics", "Intel(R) Iris",
+                "GeForce", "Radeon"
+            };
+
+            var prefixes = isCpu ? cpuPrefixes : gpuPrefixes;
+
+            foreach (var prefix in prefixes)
+            {
+                if (clean.StartsWith(prefix, StringComparison.OrdinalIgnoreCase))
+                {
+                    clean = clean.Substring(prefix.Length).Trim();
+                    break;
+                }
+            }
+
+            // Remove extra suffixes like "CPU @ 3.00GHz"
+            if (isCpu)
+            {
+                int atIndex = clean.IndexOf(" @");
+                if (atIndex > 0)
+                    clean = clean.Substring(0, atIndex);
+
+                // Remove "CPU" suffix
+                clean = Regex.Replace(clean, @"\s+CPU\s*$", "", RegexOptions.IgnoreCase);
+            }
+
+            // Clean up whitespace
+            clean = Regex.Replace(clean, @"\s+", " ").Trim();
+
+            // Fallback if empty
+            if (string.IsNullOrWhiteSpace(clean))
+                return isCpu ? "CPU" : "GPU";
+
+            return clean;
+        }
+
+        /// <summary>
+        /// Detects hardware names and generates identity hash.
+        /// Call this after hardware initialization.
+        /// </summary>
+        public void DetectHardwareIdentity()
+        {
+            // --- CPU Name ---
+            try
+            {
+                if (_computer != null)
+                {
+                    foreach (var hw in _computer.Hardware)
+                    {
+                        if (hw.HardwareType == HardwareType.Cpu)
+                        {
+                            CpuName = GetCleanName(hw.Name, true);
+                            Console.WriteLine("  [Identity] CPU: " + CpuName);
+                            break;
+                        }
+                    }
+                }
+
+                // Fallback: WMI
+                if (CpuName == "CPU")
+                {
+                    using (var searcher = new ManagementObjectSearcher("SELECT Name FROM Win32_Processor"))
+                    {
+                        foreach (ManagementObject obj in searcher.Get())
+                        {
+                            string name = obj["Name"]?.ToString();
+                            if (!string.IsNullOrEmpty(name))
+                            {
+                                CpuName = GetCleanName(name, true);
+                                Console.WriteLine("  [Identity] CPU (WMI): " + CpuName);
+                                break;
+                            }
+                        }
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine("  [Identity] CPU detection failed: " + ex.Message);
+            }
+
+            // --- GPU Name ---
+            try
+            {
+                if (_nvApiAvailable && _gpu != null)
+                {
+                    GpuName = GetCleanName(_gpu.FullName, false);
+                    Console.WriteLine("  [Identity] GPU (NvAPI): " + GpuName);
+                }
+                else if (_computer != null)
+                {
+                    foreach (var hw in _computer.Hardware)
+                    {
+                        if (hw.HardwareType == HardwareType.GpuNvidia ||
+                            hw.HardwareType == HardwareType.GpuAmd ||
+                            hw.HardwareType == HardwareType.GpuIntel)
+                        {
+                            GpuName = GetCleanName(hw.Name, false);
+                            Console.WriteLine("  [Identity] GPU: " + GpuName);
+                            break;
+                        }
+                    }
+                }
+
+                // Fallback: WMI
+                if (GpuName == "GPU")
+                {
+                    using (var searcher = new ManagementObjectSearcher("SELECT Name FROM Win32_VideoController"))
+                    {
+                        foreach (ManagementObject obj in searcher.Get())
+                        {
+                            string name = obj["Name"]?.ToString();
+                            if (!string.IsNullOrEmpty(name) && !name.Contains("Microsoft"))
+                            {
+                                GpuName = GetCleanName(name, false);
+                                Console.WriteLine("  [Identity] GPU (WMI): " + GpuName);
+                                break;
+                            }
+                        }
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine("  [Identity] GPU detection failed: " + ex.Message);
+            }
+
+            // --- Network Type ---
+            try
+            {
+                var iface = NetworkInterface.GetAllNetworkInterfaces()
+                    .FirstOrDefault(n => n.OperationalStatus == OperationalStatus.Up
+                        && n.NetworkInterfaceType != NetworkInterfaceType.Loopback
+                        && n.GetIPProperties().UnicastAddresses
+                            .Any(a => a.Address.AddressFamily == AddressFamily.InterNetwork));
+
+                if (iface != null)
+                {
+                    NetName = (iface.NetworkInterfaceType == NetworkInterfaceType.Wireless80211) ? "WLAN" : "LAN";
+                    Console.WriteLine("  [Identity] NET: " + NetName);
+                }
+            }
+            catch { }
+
+            // --- Generate Identity Hash ---
+            string combined = CpuName + "|" + GpuName + "|" + RamName + "|" + NetName;
+            IdentityHash = ComputeCrc32(combined).ToString("X8");
+            Console.WriteLine("  [Identity] Hash: " + IdentityHash + " (from: " + combined + ")");
+        }
+
+        /// <summary>
+        /// Simple CRC32 hash for identity comparison.
+        /// </summary>
+        private static uint ComputeCrc32(string input)
+        {
+            uint crc = 0xFFFFFFFF;
+            byte[] bytes = System.Text.Encoding.UTF8.GetBytes(input);
+
+            foreach (byte b in bytes)
+            {
+                crc ^= b;
+                for (int i = 0; i < 8; i++)
+                {
+                    crc = (crc >> 1) ^ (0xEDB88320 & ~((crc & 1) - 1));
+                }
+            }
+
+            return ~crc;
         }
     }
 }

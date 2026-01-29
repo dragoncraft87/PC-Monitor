@@ -76,6 +76,11 @@ namespace PCMonitorClient
         private const string HANDSHAKE_QUERY = "WHO_ARE_YOU?\n";
         private const string HANDSHAKE_RESPONSE = "SCARAB_CLIENT_OK";
 
+        // Identity Sync Protocol
+        private const string NAME_CMD_CPU = "NAME_CPU=";
+        private const string NAME_CMD_GPU = "NAME_GPU=";
+        private const string NAME_CMD_HASH = "NAME_HASH=";
+
         private static readonly string[] SKIP_PORT_KEYWORDS = { "JTAG", "Debug", "Debugger", "JLink", "ST-Link" };
         private static readonly string[] PREFER_PORT_KEYWORDS = { "USB Serial", "USB-SERIAL", "CP210", "CH340", "CH341", "FTDI", "Silicon Labs" };
 
@@ -484,8 +489,9 @@ namespace PCMonitorClient
 
                             if (ct.IsCancellationRequested) break;
 
-                            // Verify handshake
-                            if (!VerifyHandshake(port))
+                            // Verify handshake and get ESP hash
+                            string espHash = VerifyHandshakeAndGetHash(port);
+                            if (espHash == null)
                             {
                                 _statusForm.AppendLog("[Serial] Handshake FAILED on " + portName);
                                 lock (_portLock) { _activePort = null; }
@@ -496,6 +502,9 @@ namespace PCMonitorClient
 
                             // === FIRST CONNECTION ESTABLISHED ===
                             _statusForm.AppendLog("[Serial] Connected to " + portName);
+
+                            // Sync hardware identity if needed
+                            SyncIdentityIfNeeded(port, espHash);
                             _isConnected = true;
 
                             // Stop heartbeat animation on first connect
@@ -608,7 +617,11 @@ namespace PCMonitorClient
         //  HANDSHAKE & PORT DISCOVERY
         // ====================================================================
 
-        private bool VerifyHandshake(SerialPort port)
+        /// <summary>
+        /// Verifies handshake and returns ESP's identity hash (or null on failure).
+        /// Response format: SCARAB_CLIENT_OK|H:XXXXXXXX
+        /// </summary>
+        private string VerifyHandshakeAndGetHash(SerialPort port)
         {
             try
             {
@@ -622,7 +635,16 @@ namespace PCMonitorClient
                 try
                 {
                     string response = port.ReadLine();
-                    return response != null && response.Contains(HANDSHAKE_RESPONSE);
+                    if (response != null && response.Contains(HANDSHAKE_RESPONSE))
+                    {
+                        // Parse hash: SCARAB_CLIENT_OK|H:XXXXXXXX
+                        int hashPos = response.IndexOf("|H:");
+                        if (hashPos >= 0 && response.Length >= hashPos + 11)
+                        {
+                            return response.Substring(hashPos + 3, 8);
+                        }
+                        return "00000000"; // Old firmware without hash support
+                    }
                 }
                 finally
                 {
@@ -630,7 +652,59 @@ namespace PCMonitorClient
                 }
             }
             catch { }
-            return false;
+            return null; // Handshake failed
+        }
+
+        private bool VerifyHandshake(SerialPort port)
+        {
+            return VerifyHandshakeAndGetHash(port) != null;
+        }
+
+        /// <summary>
+        /// Syncs hardware identity if ESP hash differs from local.
+        /// Sends NAME_CPU, NAME_GPU, NAME_HASH commands.
+        /// </summary>
+        private void SyncIdentityIfNeeded(SerialPort port, string espHash)
+        {
+            if (_collector == null) return;
+
+            string localHash = _collector.IdentityHash;
+
+            if (espHash == localHash)
+            {
+                _statusForm.AppendLog("[Sync] Hash match: " + localHash);
+                return;
+            }
+
+            _statusForm.AppendLog("[Sync] Hash mismatch! ESP=" + espHash + " Local=" + localHash);
+            _statusForm.AppendLog("[Sync] Sending hardware names...");
+
+            try
+            {
+                // Send CPU name
+                string cmdCpu = NAME_CMD_CPU + _collector.CpuName + "\n";
+                port.Write(cmdCpu);
+                port.BaseStream.Flush();
+                Thread.Sleep(50);
+
+                // Send GPU name
+                string cmdGpu = NAME_CMD_GPU + _collector.GpuName + "\n";
+                port.Write(cmdGpu);
+                port.BaseStream.Flush();
+                Thread.Sleep(50);
+
+                // Send new hash (ESP will store it)
+                string cmdHash = NAME_CMD_HASH + localHash + "\n";
+                port.Write(cmdHash);
+                port.BaseStream.Flush();
+                Thread.Sleep(50);
+
+                _statusForm.AppendLog("[Sync] Names sent: CPU=" + _collector.CpuName + ", GPU=" + _collector.GpuName);
+            }
+            catch (Exception ex)
+            {
+                _statusForm.AppendLog("[Sync] Error: " + ex.Message);
+            }
         }
 
         private string FindEsp32ByHandshake(CancellationToken ct)

@@ -1,0 +1,9 @@
+# PC Monitor - Custom Partition Table (ESP32-S3 N16R8 - 16MB Flash)
+# =============================================================================
+# No OTA - Single factory app with LittleFS storage
+# =============================================================================
+# Name,Type,SubType,Offset,Size,Flags
+nvs,data,nvs,0x9000,0x6000,
+phy_init,data,phy,,0x1000,
+factory,app,factory,,4M,
+storage,data,littlefs,,10M,

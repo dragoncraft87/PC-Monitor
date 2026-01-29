@@ -18,4 +18,6 @@
             esp_lcd
             driver
     )
+
+littlefs_create_partition_image(storage lfs FLASH_IN_PROJECT)
    

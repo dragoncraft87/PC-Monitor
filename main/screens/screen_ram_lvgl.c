@@ -106,6 +106,21 @@ void screen_ram_update(screen_ram_t *s, const pc_stats_t *stats)
 {
     if (!s) return;
 
+    /* ---- Check for sensor error (N/A case) ---- */
+    if (stats->ram_used_gb < 0.0f || stats->ram_total_gb < 0.0f) {
+        /* Sensor error - show N/A in red */
+        lv_bar_set_value(s->bar, 0, LV_ANIM_OFF);
+        lv_label_set_text(s->label_value, "N/A");
+        lv_obj_set_style_text_color(s->label_value, lv_color_hex(0xFF4444), 0);
+        lv_label_set_text(s->label_percent, "N/A");
+        lv_obj_set_style_text_color(s->label_percent, lv_color_hex(0xFF4444), 0);
+        lv_label_set_text(s->label_total, "");
+        lv_obj_set_style_bg_color(s->bar, lv_color_hex(0xFF4444), LV_PART_INDICATOR);
+        return;
+    }
+
+    /* ---- Valid data ---- */
+
     /* Calculate percentage (guard against division by zero at boot) */
     int percent;
     if (stats->ram_total_gb > 0.1f) {
@@ -123,16 +138,17 @@ void screen_ram_update(screen_ram_t *s, const pc_stats_t *stats)
     char buf[16];
     snprintf(buf, sizeof(buf), "%.1f GB", stats->ram_used_gb);
     lv_label_set_text(s->label_value, buf);
+    lv_obj_set_style_text_color(s->label_value, lv_color_white(), 0);
 
     /* Update percentage */
     char percent_buf[8];
     snprintf(percent_buf, sizeof(percent_buf), "%d%%", percent);
     lv_label_set_text(s->label_percent, percent_buf);
+    lv_obj_set_style_text_color(s->label_percent, lv_color_make(0x43, 0xe9, 0x7b), 0);
 
-    /* Update total (use 64GB if stats invalid) */
+    /* Update total */
     char total_buf[16];
-    float ram_total = (stats->ram_total_gb > 0) ? stats->ram_total_gb : 64.0f;
-    snprintf(total_buf, sizeof(total_buf), "von %.0f GB", ram_total);
+    snprintf(total_buf, sizeof(total_buf), "von %.0f GB", stats->ram_total_gb);
     lv_label_set_text(s->label_total, total_buf);
 
     /* Change bar color based on usage */

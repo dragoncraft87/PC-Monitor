@@ -145,26 +145,42 @@ void screen_network_update(screen_network_t *s, const pc_stats_t *stats)
     /* Update speed */
     lv_label_set_text(s->label_speed, stats->net_speed);
 
-    /* Update download speed label */
-    char down_buf[16];
-    snprintf(down_buf, sizeof(down_buf), "DN: %.1f MB/s", stats->net_down_mbps);
-    lv_label_set_text(s->label_down, down_buf);
+    /* ---- Download speed ---- */
+    if (stats->net_down_mbps < 0.0f) {
+        /* Counter error - show N/A in red */
+        lv_label_set_text(s->label_down, "DN: N/A");
+        lv_obj_set_style_text_color(s->label_down, lv_color_hex(0xFF4444), 0);
+    } else {
+        char down_buf[16];
+        snprintf(down_buf, sizeof(down_buf), "DN: %.1f MB/s", stats->net_down_mbps);
+        lv_label_set_text(s->label_down, down_buf);
+        lv_obj_set_style_text_color(s->label_down, lv_color_make(0x00, 0xff, 0xff), 0); /* Cyan */
+    }
 
-    /* Update upload speed label */
-    char up_buf[16];
-    snprintf(up_buf, sizeof(up_buf), "UP: %.1f MB/s", stats->net_up_mbps);
-    lv_label_set_text(s->label_up, up_buf);
+    /* ---- Upload speed ---- */
+    if (stats->net_up_mbps < 0.0f) {
+        /* Counter error - show N/A in red */
+        lv_label_set_text(s->label_up, "UP: N/A");
+        lv_obj_set_style_text_color(s->label_up, lv_color_hex(0xFF4444), 0);
+    } else {
+        char up_buf[16];
+        snprintf(up_buf, sizeof(up_buf), "UP: %.1f MB/s", stats->net_up_mbps);
+        lv_label_set_text(s->label_up, up_buf);
+        lv_obj_set_style_text_color(s->label_up, lv_color_make(0xff, 0x00, 0xff), 0); /* Magenta */
+    }
 
     /* Add new data point to chart (scale to 0-100 range) */
     /* Assuming max 125 MB/s for scaling */
-    int down_scaled = (int)((stats->net_down_mbps / 125.0f) * 100.0f);
-    int up_scaled = (int)((stats->net_up_mbps / 125.0f) * 100.0f);
+    /* Use 0 for chart if value is negative (error state) */
+    float down_val = (stats->net_down_mbps >= 0.0f) ? stats->net_down_mbps : 0.0f;
+    float up_val = (stats->net_up_mbps >= 0.0f) ? stats->net_up_mbps : 0.0f;
+
+    int down_scaled = (int)((down_val / 125.0f) * 100.0f);
+    int up_scaled = (int)((up_val / 125.0f) * 100.0f);
 
     if (down_scaled > 100) down_scaled = 100;
-    if (down_scaled < 0) down_scaled = 0;
     if (up_scaled > 100) up_scaled = 100;
-    if (up_scaled < 0) up_scaled = 0;
-    
+
     lv_chart_set_next_value(s->chart, s->ser_down, down_scaled);
     lv_chart_set_next_value(s->chart, s->ser_up, up_scaled);
 
