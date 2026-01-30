@@ -676,7 +676,13 @@ namespace PCMonitorClient
         // ========================================================================
 
         /// <summary>
+        /// Maximum characters for display labels (ESP32 arc displays)
+        /// </summary>
+        private const int MAX_NAME_LENGTH = 12;
+
+        /// <summary>
         /// Cleans up hardware names by removing common brand prefixes.
+        /// Result is limited to 12 characters for ESP32 display compatibility.
         /// </summary>
         public static string GetCleanName(string rawName, bool isCpu)
         {
@@ -685,45 +691,90 @@ namespace PCMonitorClient
 
             string clean = rawName;
 
-            // Remove common CPU brand prefixes
-            string[] cpuPrefixes = {
-                "Intel(R) Core(TM)", "Intel(R) Xeon(R)", "Intel(R) Celeron(R)",
-                "Intel(R) Pentium(R)", "Intel(R) Core(TM)2", "Intel(R)",
-                "AMD Ryzen", "AMD EPYC", "AMD Athlon", "AMD FX", "AMD"
+            // === PHASE 1: Remove all brand/marketing prefixes ===
+
+            // Common brand patterns to remove (order matters - longer first!)
+            // Note: Keep model identifiers like "i9", "RTX", "RX" etc.
+            string[] brandPatterns = {
+                // Intel CPU patterns (keep the "i" prefix for i3/i5/i7/i9!)
+                "Intel(R) Core(TM)2 Quad ", "Intel(R) Core(TM)2 Duo ",
+                "Intel(R) Core(TM)2 ", "Intel(R) Core(TM) ",
+                "Intel(R) Xeon(R) ", "Intel(R) Celeron(R) ", "Intel(R) Pentium(R) ",
+                "Intel Core ", "Intel(R) ",
+                // AMD CPU patterns (keep Ryzen tier numbers as they're useful)
+                "AMD Ryzen Threadripper ", "AMD Ryzen 9 ", "AMD Ryzen 7 ",
+                "AMD Ryzen 5 ", "AMD Ryzen 3 ", "AMD Ryzen ",
+                "AMD EPYC ", "AMD Athlon ", "AMD FX-", "AMD FX ", "AMD ",
+                // NVIDIA GPU patterns (keep RTX/GTX prefix - it's the model!)
+                "NVIDIA GeForce ", "NVIDIA Quadro ", "NVIDIA Tesla ", "NVIDIA ",
+                "GeForce ",
+                // AMD GPU patterns (keep RX prefix)
+                "AMD Radeon ", "Radeon ",
+                // Intel GPU patterns
+                "Intel(R) UHD Graphics ", "Intel(R) HD Graphics ",
+                "Intel(R) Iris Xe Graphics ", "Intel(R) Iris Plus Graphics ",
+                "Intel(R) Iris ", "Intel(R) Arc ",
+                "Intel UHD ", "Intel HD ", "Intel Iris ", "Intel Arc "
             };
 
-            // Remove common GPU brand prefixes
-            string[] gpuPrefixes = {
-                "NVIDIA GeForce", "NVIDIA Quadro", "NVIDIA Tesla", "NVIDIA",
-                "AMD Radeon RX", "AMD Radeon", "AMD",
-                "Intel(R) UHD Graphics", "Intel(R) HD Graphics", "Intel(R) Iris",
-                "GeForce", "Radeon"
-            };
-
-            var prefixes = isCpu ? cpuPrefixes : gpuPrefixes;
-
-            foreach (var prefix in prefixes)
+            foreach (var pattern in brandPatterns)
             {
-                if (clean.StartsWith(prefix, StringComparison.OrdinalIgnoreCase))
+                if (clean.StartsWith(pattern, StringComparison.OrdinalIgnoreCase))
                 {
-                    clean = clean.Substring(prefix.Length).Trim();
-                    break;
+                    clean = clean.Substring(pattern.Length).Trim();
+                    // Don't break - continue to remove nested patterns
                 }
             }
 
-            // Remove extra suffixes like "CPU @ 3.00GHz"
-            if (isCpu)
-            {
-                int atIndex = clean.IndexOf(" @");
-                if (atIndex > 0)
-                    clean = clean.Substring(0, atIndex);
+            // === PHASE 2: Remove suffixes and extra info ===
 
-                // Remove "CPU" suffix
-                clean = Regex.Replace(clean, @"\s+CPU\s*$", "", RegexOptions.IgnoreCase);
+            // Remove clock speed suffix " @ 3.00GHz" etc.
+            int atIndex = clean.IndexOf(" @");
+            if (atIndex > 0)
+                clean = clean.Substring(0, atIndex);
+
+            // Remove common verbose suffixes
+            string[] suffixPatterns = {
+                " Processor", " CPU", " Graphics", " Edition",
+                " Extreme", " Ultimate", " Black", " White",
+                " Founders", " Gaming", " OC", " SUPER"
+            };
+
+            foreach (var suffix in suffixPatterns)
+            {
+                if (clean.EndsWith(suffix, StringComparison.OrdinalIgnoreCase))
+                {
+                    clean = clean.Substring(0, clean.Length - suffix.Length);
+                }
             }
 
-            // Clean up whitespace
+            // Clean up whitespace and normalize
             clean = Regex.Replace(clean, @"\s+", " ").Trim();
+
+            // === PHASE 3: Intelligent shortening if still too long ===
+
+            if (clean.Length > MAX_NAME_LENGTH)
+            {
+                // Try removing less important parts
+                string[] removeIfTooLong = {
+                    " Ti", " XT", " XE", " Pro", " Plus", " Max",
+                    " Laptop", " Mobile", " Desktop"
+                };
+
+                foreach (var part in removeIfTooLong)
+                {
+                    if (clean.Length <= MAX_NAME_LENGTH) break;
+                    clean = clean.Replace(part, "");
+                }
+                clean = clean.Trim();
+            }
+
+            // === PHASE 4: Hard limit as last resort ===
+
+            if (clean.Length > MAX_NAME_LENGTH)
+            {
+                clean = clean.Substring(0, MAX_NAME_LENGTH).TrimEnd();
+            }
 
             // Fallback if empty
             if (string.IsNullOrWhiteSpace(clean))
