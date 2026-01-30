@@ -1,8 +1,15 @@
 /**
  * @file main_lvgl.c
- * @brief PC Monitor - Desert-Spec v2.0 (Modular Edition)
+ * @brief PC Monitor - Desert-Spec v2.1 (Hardened Edition)
  *
- * Refactored modular architecture:
+ * Thread-Safety Hardening (v2.1):
+ * - NEVER use portMAX_DELAY (causes freezes)
+ * - All mutex operations have timeouts with fail-safe skip behavior
+ * - Task Watchdog (TWDT) triggers hard reset after 5s hang
+ * - Increased stack sizes for safety margin
+ * - Proper task priority ordering
+ *
+ * Modular architecture:
  * - storage/   : LittleFS, hw_identity, gui_settings
  * - drivers/   : usb_serial_comm
  * - ui/        : ui_manager, screensaver_mgr
@@ -16,6 +23,7 @@
 #include "freertos/semphr.h"
 #include "esp_log.h"
 #include "esp_timer.h"
+#include "esp_task_wdt.h"
 #include "driver/gpio.h"
 #include "driver/spi_master.h"
 
@@ -40,6 +48,37 @@ static const char *TAG = "MAIN";
 #define SCREENSAVER_TIMEOUT_MS   30000   /* 30 seconds no data -> screensaver */
 #define STALE_DATA_THRESHOLD_MS  2000    /* 2 seconds -> show red dot */
 #define DISPLAY_UPDATE_MS        100     /* 10 FPS - Watchdog friendly */
+
+/* =============================================================================
+ * DESERT-SPEC: THREAD-SAFETY CONFIGURATION
+ * - Never use portMAX_DELAY (can cause freezes)
+ * - Use timeouts with fail-safe skip behavior
+ * ========================================================================== */
+#define LVGL_MUTEX_TIMEOUT_MS    200     /* Max wait for LVGL mutex */
+#define STATS_MUTEX_TIMEOUT_MS   100     /* Max wait for stats mutex */
+
+/* =============================================================================
+ * TASK STACK SIZES (increased 30% for safety margin)
+ * - String operations and printf consume significant stack
+ * ========================================================================== */
+#define STACK_SIZE_USB_RX        6144    /* Was 4096, increased for safety */
+#define STACK_SIZE_LVGL_TIMER    8192    /* Large - handles LVGL rendering */
+#define STACK_SIZE_DISPLAY_UPD   6144    /* Was 4096, increased for safety */
+#define STACK_SIZE_LVGL_TICK     2048    /* Small - only increments tick */
+
+/* =============================================================================
+ * TASK PRIORITIES (Higher number = higher priority)
+ * Priority order: USB RX > LVGL Timer > Display Update > LVGL Tick
+ * ========================================================================== */
+#define PRIO_USB_RX              4       /* Highest - input must not be lost */
+#define PRIO_LVGL_TIMER          3       /* High - LVGL needs consistent timing */
+#define PRIO_DISPLAY_UPDATE      2       /* Medium - UI updates */
+#define PRIO_LVGL_TICK           1       /* Low - simple tick increment */
+
+/* =============================================================================
+ * WATCHDOG CONFIGURATION
+ * ========================================================================== */
+#define TWDT_TIMEOUT_SEC         5       /* Task watchdog timeout */
 
 /* =============================================================================
  * GLOBAL STATE
@@ -88,7 +127,13 @@ static void display_update_task(void *arg)
 {
     ESP_LOGI(TAG, "Display Update Task started (10 FPS)");
 
+    /* Subscribe to Task Watchdog */
+    esp_task_wdt_add(NULL);
+
     while (1) {
+        /* Feed the watchdog at start of each iteration */
+        esp_task_wdt_reset();
+
         uint32_t now = (uint32_t)(esp_timer_get_time() / 1000);
         uint32_t last_data = usb_serial_get_last_data_time();
         uint32_t time_since_data = now - last_data;
@@ -96,7 +141,8 @@ static void display_update_task(void *arg)
         bool data_is_stale = (time_since_data > STALE_DATA_THRESHOLD_MS);
         bool should_screensave = (time_since_data > SCREENSAVER_TIMEOUT_MS);
 
-        if (xSemaphoreTake(s_lvgl_mutex, pdMS_TO_TICKS(50)) == pdTRUE) {
+        /* Acquire LVGL mutex with timeout - NEVER use portMAX_DELAY! */
+        if (xSemaphoreTake(s_lvgl_mutex, pdMS_TO_TICKS(LVGL_MUTEX_TIMEOUT_MS)) == pdTRUE) {
 
             /* Screensaver logic */
             if (should_screensave && !ui_manager_is_screensaver_active()) {
@@ -119,14 +165,22 @@ static void display_update_task(void *arg)
 
             /* Update screens (only if not in screensaver) */
             if (!ui_manager_is_screensaver_active()) {
-                xSemaphoreTake(s_stats_mutex, portMAX_DELAY);
-                pc_stats_t local_stats = *usb_serial_get_stats();
-                xSemaphoreGive(s_stats_mutex);
+                /* Acquire stats mutex with timeout - NEVER use portMAX_DELAY! */
+                if (xSemaphoreTake(s_stats_mutex, pdMS_TO_TICKS(STATS_MUTEX_TIMEOUT_MS)) == pdTRUE) {
+                    pc_stats_t local_stats = *usb_serial_get_stats();
+                    xSemaphoreGive(s_stats_mutex);
 
-                ui_manager_update_screens(&local_stats);
+                    ui_manager_update_screens(&local_stats);
+                } else {
+                    /* Fail-safe: Skip this frame, don't freeze! */
+                    ESP_LOGW(TAG, "Stats mutex timeout in display task - skipping frame");
+                }
             }
 
             xSemaphoreGive(s_lvgl_mutex);
+        } else {
+            /* Fail-safe: LVGL mutex timeout - skip this frame */
+            ESP_LOGW(TAG, "LVGL mutex timeout in display task - skipping frame");
         }
 
         vTaskDelay(pdMS_TO_TICKS(DISPLAY_UPDATE_MS));
@@ -151,8 +205,14 @@ static void lvgl_timer_task(void *arg)
 {
     ESP_LOGI(TAG, "LVGL Timer Task started");
 
+    /* Subscribe to Task Watchdog */
+    esp_task_wdt_add(NULL);
+
     while (1) {
-        if (xSemaphoreTake(s_lvgl_mutex, pdMS_TO_TICKS(20)) == pdTRUE) {
+        /* Feed the watchdog */
+        esp_task_wdt_reset();
+
+        if (xSemaphoreTake(s_lvgl_mutex, pdMS_TO_TICKS(LVGL_MUTEX_TIMEOUT_MS)) == pdTRUE) {
             uint32_t time_till_next = lv_timer_handler();
             xSemaphoreGive(s_lvgl_mutex);
 
@@ -160,6 +220,7 @@ static void lvgl_timer_task(void *arg)
             if (delay_ms > 30) delay_ms = 30;
             vTaskDelay(pdMS_TO_TICKS(delay_ms));
         } else {
+            /* LVGL mutex busy - small delay and retry */
             vTaskDelay(pdMS_TO_TICKS(5));
         }
 
@@ -173,8 +234,19 @@ static void lvgl_timer_task(void *arg)
 void app_main(void)
 {
     ESP_LOGI(TAG, "===========================================");
-    ESP_LOGI(TAG, "PC Monitor - Desert-Spec v2.0");
+    ESP_LOGI(TAG, "PC Monitor - Desert-Spec v2.1 (Hardened)");
     ESP_LOGI(TAG, "===========================================");
+
+    /* Initialize Task Watchdog Timer (TWDT)
+     * If a task hangs for > TWDT_TIMEOUT_SEC, the ESP32 will reset automatically.
+     * This prevents permanent freezes - 24/7 stability! */
+    esp_task_wdt_config_t twdt_config = {
+        .timeout_ms = TWDT_TIMEOUT_SEC * 1000,
+        .idle_core_mask = 0,                    /* Don't watch idle tasks */
+        .trigger_panic = true                   /* Hard reset on timeout */
+    };
+    ESP_ERROR_CHECK(esp_task_wdt_reconfigure(&twdt_config));
+    ESP_LOGI(TAG, "Task Watchdog configured: %d sec timeout, panic on freeze", TWDT_TIMEOUT_SEC);
 
     /* Initialize LittleFS storage */
     if (storage_init() == ESP_OK) {
@@ -220,8 +292,12 @@ void app_main(void)
     lv_init();
     ESP_LOGI(TAG, "LVGL initialized");
 
-    /* Initialize displays and screens (under mutex) */
-    xSemaphoreTake(s_lvgl_mutex, portMAX_DELAY);
+    /* Initialize displays and screens (under mutex)
+     * NOTE: During init, we use a longer timeout since there's no contention yet */
+    if (xSemaphoreTake(s_lvgl_mutex, pdMS_TO_TICKS(1000)) != pdTRUE) {
+        ESP_LOGE(TAG, "Failed to acquire LVGL mutex during init!");
+        return;
+    }
 
     /* Initialize screensaver image system */
     ss_images_init();
@@ -285,10 +361,18 @@ void app_main(void)
     /* Start USB RX task */
     usb_serial_start_rx_task(s_stats_mutex);
 
-    /* Create remaining tasks */
-    xTaskCreate(lvgl_tick_task, "lv_tick", 2048, NULL, 2, NULL);
-    xTaskCreatePinnedToCore(lvgl_timer_task, "lv_timer", 8192, NULL, 2, NULL, 1);
-    xTaskCreatePinnedToCore(display_update_task, "update", 4096, NULL, 2, NULL, 0);
+    /* Create tasks with Desert-Spec hardened configuration
+     * - Increased stack sizes for safety margin
+     * - Proper priority ordering: USB > LVGL Timer > Display > Tick
+     * - Tasks subscribed to TWDT will trigger panic on freeze */
+    xTaskCreate(lvgl_tick_task, "lv_tick", STACK_SIZE_LVGL_TICK, NULL, PRIO_LVGL_TICK, NULL);
+    xTaskCreatePinnedToCore(lvgl_timer_task, "lv_timer", STACK_SIZE_LVGL_TIMER, NULL, PRIO_LVGL_TIMER, NULL, 1);
+    xTaskCreatePinnedToCore(display_update_task, "disp_upd", STACK_SIZE_DISPLAY_UPD, NULL, PRIO_DISPLAY_UPDATE, NULL, 0);
+
+    ESP_LOGI(TAG, "Task stack sizes: USB_RX=%d, LVGL_Timer=%d, Display=%d, Tick=%d",
+             STACK_SIZE_USB_RX, STACK_SIZE_LVGL_TIMER, STACK_SIZE_DISPLAY_UPD, STACK_SIZE_LVGL_TICK);
+    ESP_LOGI(TAG, "Task priorities: USB_RX=%d, LVGL_Timer=%d, Display=%d, Tick=%d",
+             PRIO_USB_RX, PRIO_LVGL_TIMER, PRIO_DISPLAY_UPDATE, PRIO_LVGL_TICK);
 
     ESP_LOGI(TAG, "===========================================");
     ESP_LOGI(TAG, "System ready. Waiting for USB data...");

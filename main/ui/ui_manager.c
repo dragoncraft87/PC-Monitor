@@ -21,6 +21,40 @@ static ui_status_dots_t *s_dots = NULL;
 static SemaphoreHandle_t s_lvgl_mutex = NULL;
 static bool s_screensaver_active = false;
 
+/* Lock statistics for debugging */
+static uint32_t s_lock_timeouts = 0;
+static uint32_t s_lock_successes = 0;
+
+/* =============================================================================
+ * THREAD-SAFE LOCKING API (The Iron Gate)
+ * ========================================================================== */
+
+bool ui_acquire_lock(uint32_t timeout_ms)
+{
+    if (!s_lvgl_mutex) {
+        ESP_LOGE(TAG, "UI Lock: Mutex not initialized!");
+        return false;
+    }
+
+    if (xSemaphoreTake(s_lvgl_mutex, pdMS_TO_TICKS(timeout_ms)) == pdTRUE) {
+        s_lock_successes++;
+        return true;
+    }
+
+    /* Lock timeout - FAIL-SAFE: Skip update, don't freeze! */
+    s_lock_timeouts++;
+    ESP_LOGW(TAG, "UI Lock Timeout (%lu ms)! Skipping update. [timeouts: %lu, successes: %lu]",
+             (unsigned long)timeout_ms, (unsigned long)s_lock_timeouts, (unsigned long)s_lock_successes);
+    return false;
+}
+
+void ui_release_lock(void)
+{
+    if (s_lvgl_mutex) {
+        xSemaphoreGive(s_lvgl_mutex);
+    }
+}
+
 /* =============================================================================
  * INITIALIZATION
  * ========================================================================== */

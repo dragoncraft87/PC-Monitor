@@ -13,13 +13,18 @@
 #include "driver/usb_serial_jtag.h"
 #include "esp_log.h"
 #include "esp_timer.h"
+#include "esp_task_wdt.h"
 
 static const char *TAG = "USB-COMM";
+
+/* Thread-safety configuration */
+#define STATS_MUTEX_TIMEOUT_MS  100  /* Never block indefinitely! */
 
 /* Global state */
 static pc_stats_t s_pc_stats = {0};
 static volatile uint32_t s_last_data_ms = 0;
 static SemaphoreHandle_t s_stats_mutex = NULL;
+static uint32_t s_stats_mutex_timeouts = 0;
 
 /* Command handlers (max 8) */
 #define MAX_CMD_HANDLERS 8
@@ -163,11 +168,18 @@ static void parse_pc_data(const char *line)
 
     /* Only commit if we got enough fields (avoid partial/corrupt updates) */
     if (fields_parsed >= 5) {
-        xSemaphoreTake(s_stats_mutex, portMAX_DELAY);
-        s_pc_stats = temp_stats;
-        s_last_data_ms = (uint32_t)(esp_timer_get_time() / 1000);
-        xSemaphoreGive(s_stats_mutex);
-        ESP_LOGD(TAG, "Parsed %d fields, timestamp updated", fields_parsed);
+        /* Thread-safe write with timeout - NEVER use portMAX_DELAY! */
+        if (xSemaphoreTake(s_stats_mutex, pdMS_TO_TICKS(STATS_MUTEX_TIMEOUT_MS)) == pdTRUE) {
+            s_pc_stats = temp_stats;
+            s_last_data_ms = (uint32_t)(esp_timer_get_time() / 1000);
+            xSemaphoreGive(s_stats_mutex);
+            ESP_LOGD(TAG, "Parsed %d fields, timestamp updated", fields_parsed);
+        } else {
+            /* Fail-safe: Skip this update, don't freeze! */
+            s_stats_mutex_timeouts++;
+            ESP_LOGW(TAG, "Stats mutex timeout! Skipping data update. [timeouts: %lu]",
+                     (unsigned long)s_stats_mutex_timeouts);
+        }
     } else {
         ESP_LOGW(TAG, "Incomplete data: only %d fields parsed, discarding", fields_parsed);
     }
@@ -203,7 +215,12 @@ static void usb_rx_task(void *arg)
 
     ESP_LOGI(TAG, "USB RX Task started");
 
+    /* Subscribe to Task Watchdog - will reset ESP32 if task hangs */
+    esp_task_wdt_add(NULL);
+
     while (1) {
+        /* Feed the watchdog at start of each iteration */
+        esp_task_wdt_reset();
         /* Read with timeout so other tasks can run */
         int len = usb_serial_jtag_read_bytes(rx_buf, sizeof(rx_buf), pdMS_TO_TICKS(10));
 
@@ -251,17 +268,28 @@ static void usb_rx_task(void *arg)
                 }
             }
 
+            /* Yield to other tasks after processing data (Watchdog friendly) */
             vTaskDelay(pdMS_TO_TICKS(1));
         } else {
+            /* No data - longer delay to save CPU, still yields for Watchdog */
             vTaskDelay(pdMS_TO_TICKS(10));
         }
+
+        /* Extra yield point for Task Watchdog Timer (TWDT) */
+        taskYIELD();
     }
 }
+
+/* Task configuration - matches main_lvgl.c defines */
+#define STACK_SIZE_USB_RX   6144    /* Increased for safety */
+#define PRIO_USB_RX         4       /* Highest priority */
 
 void usb_serial_start_rx_task(SemaphoreHandle_t stats_mutex)
 {
     s_stats_mutex = stats_mutex;
     s_last_data_ms = (uint32_t)(esp_timer_get_time() / 1000);
 
-    xTaskCreate(usb_rx_task, "usb_rx", 4096, NULL, 3, NULL);
+    /* Create USB RX task with hardened configuration */
+    xTaskCreate(usb_rx_task, "usb_rx", STACK_SIZE_USB_RX, NULL, PRIO_USB_RX, NULL);
+    ESP_LOGI(TAG, "USB RX Task created (stack: %d, prio: %d)", STACK_SIZE_USB_RX, PRIO_USB_RX);
 }

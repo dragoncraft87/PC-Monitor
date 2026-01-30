@@ -44,6 +44,48 @@ typedef struct {
     lv_obj_t *net;
 } ui_status_dots_t;
 
+/* =============================================================================
+ * THREAD-SAFE LOCKING API (The Iron Gate)
+ * ========================================================================== */
+
+/** Default timeout for LVGL lock acquisition (ms) */
+#define UI_LOCK_TIMEOUT_MS      200
+
+/**
+ * @brief Acquire LVGL mutex with timeout (Fail-Safe)
+ *
+ * IMPORTANT: Never blocks indefinitely. If lock cannot be acquired,
+ * logs a warning and returns false. The caller should skip the UI update.
+ *
+ * @param timeout_ms Maximum wait time in milliseconds
+ * @return true if lock acquired, false on timeout (skip UI update!)
+ */
+bool ui_acquire_lock(uint32_t timeout_ms);
+
+/**
+ * @brief Release LVGL mutex
+ *
+ * Only call this if ui_acquire_lock() returned true!
+ */
+void ui_release_lock(void);
+
+/**
+ * @brief Convenience macro for lock-protected LVGL operations
+ *
+ * Usage:
+ *   UI_LOCK_SAFE(200) {
+ *       lv_label_set_text(...);
+ *   }
+ *
+ * If lock fails, the block is skipped and a warning is logged.
+ */
+#define UI_LOCK_SAFE(timeout_ms) \
+    for (bool _ui_locked = ui_acquire_lock(timeout_ms); _ui_locked; _ui_locked = (ui_release_lock(), false))
+
+/* =============================================================================
+ * INITIALIZATION
+ * ========================================================================== */
+
 /**
  * @brief Initialize UI manager
  * @param lvgl_mutex LVGL mutex for thread-safe access
