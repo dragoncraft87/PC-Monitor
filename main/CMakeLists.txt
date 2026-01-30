@@ -22,11 +22,11 @@ idf_component_register(
         "screens/screen_ram_lvgl.c"
         "screens/screen_network_lvgl.c"
 
-        # Compiled images (fallback screensavers)
-        "images/DK_Fass.c"
-        "images/PacMan.c"
-        "images/Sonic_Ring.c"
-        "images/triforce.c"
+        # Compiled images (system icons - Desert-Spec v2.2)
+        "images/CPU.c"
+        "images/GPU.c"
+        "images/RAM.c"
+        "images/NET.c"
 
     INCLUDE_DIRS
         "."

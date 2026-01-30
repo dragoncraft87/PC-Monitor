@@ -1493,68 +1493,103 @@ namespace PCMonitorClient
                    ext == ".gif" || ext == ".bmp" || ext == ".webp";
         }
 
+        /// <summary>
+        /// WYSIWYG Preview: Simulates how the image will appear on the 240x240 GC9A01 display.
+        /// - Images smaller than 240px are NOT scaled up (appear small and centered)
+        /// - Images larger than 240px are scaled down (aspect fit)
+        /// - Black background fills uncovered circular area (like ImageConverter does)
+        /// </summary>
         protected override void OnPaint(PaintEventArgs e)
         {
             var g = e.Graphics;
             g.SmoothingMode = SmoothingMode.AntiAlias;
             g.InterpolationMode = InterpolationMode.HighQualityBicubic;
 
-            int size = Math.Min(Width, Height);
-            int x = (Width - size) / 2;
-            int y = (Height - size) / 2;
-            var rect = new Rectangle(x, y, size - 1, size - 1);
+            // Physical display resolution (GC9A01)
+            const float DISPLAY_RESOLUTION = 240f;
 
-            // Draw outer frame (represents physical display boundary)
+            int panelSize = Math.Min(Width, Height);
+            int x = (Width - panelSize) / 2;
+            int y = (Height - panelSize) / 2;
+            var rect = new Rectangle(x, y, panelSize - 1, panelSize - 1);
+
+            // UI scale factor: how panel pixels map to display pixels
+            // e.g., 160px panel / 240px display = 0.667
+            float uiScale = (panelSize - 8) / DISPLAY_RESOLUTION;  // -8 for inner margin
+
+            // Draw outer frame (represents physical display bezel)
             using (var frameBrush = new SolidBrush(Color.FromArgb(8, 8, 10)))
             {
                 g.FillEllipse(frameBrush, rect);
             }
 
-            // Inner circular area (visible display area)
+            // Inner circular area (visible display area - 240x240 logical)
             int innerMargin = 4;
             var innerRect = new Rectangle(x + innerMargin, y + innerMargin,
-                                          size - innerMargin * 2 - 1, size - innerMargin * 2 - 1);
+                                          panelSize - innerMargin * 2 - 1, panelSize - innerMargin * 2 - 1);
 
             using (var path = new GraphicsPath())
             {
                 path.AddEllipse(innerRect);
                 g.SetClip(path);
 
-                // Background
-                using (var bgBrush = new SolidBrush(Color.FromArgb(16, 16, 20)))
+                // Black background (simulates ImageConverter's black fill)
+                using (var bgBrush = new SolidBrush(Color.Black))
                 {
                     g.FillEllipse(bgBrush, innerRect);
                 }
 
-                // Image if loaded
+                // Image if loaded - WYSIWYG logic
                 if (_image != null)
                 {
-                    float scale = Math.Min((float)(size - innerMargin * 2) / _image.Width,
-                                          (float)(size - innerMargin * 2) / _image.Height);
-                    int imgW = (int)(_image.Width * scale);
-                    int imgH = (int)(_image.Height * scale);
-                    int imgX = x + innerMargin + (size - innerMargin * 2 - imgW) / 2;
-                    int imgY = y + innerMargin + (size - innerMargin * 2 - imgH) / 2;
+                    int imgW, imgH;
+
+                    // Determine logical size on 240x240 display
+                    if (_image.Width <= DISPLAY_RESOLUTION && _image.Height <= DISPLAY_RESOLUTION)
+                    {
+                        // Image fits within 240x240 - use original size (no upscaling!)
+                        // This ensures a 50x50 icon looks small and centered
+                        imgW = (int)(_image.Width * uiScale);
+                        imgH = (int)(_image.Height * uiScale);
+                    }
+                    else
+                    {
+                        // Image larger than 240x240 - scale down to fit (aspect fit)
+                        float scaleToFit = Math.Min(DISPLAY_RESOLUTION / _image.Width,
+                                                     DISPLAY_RESOLUTION / _image.Height);
+                        float logicalW = _image.Width * scaleToFit;
+                        float logicalH = _image.Height * scaleToFit;
+
+                        // Convert logical display pixels to UI pixels
+                        imgW = (int)(logicalW * uiScale);
+                        imgH = (int)(logicalH * uiScale);
+                    }
+
+                    // Center the image within the inner circular area
+                    int innerSize = panelSize - innerMargin * 2;
+                    int imgX = x + innerMargin + (innerSize - imgW) / 2;
+                    int imgY = y + innerMargin + (innerSize - imgH) / 2;
+
                     g.DrawImage(_image, imgX, imgY, imgW, imgH);
                 }
                 else
                 {
-                    // Draw placeholder
-                    using (var brush = new SolidBrush(Color.FromArgb(50, 50, 60)))
+                    // Draw placeholder text
+                    using (var brush = new SolidBrush(Color.FromArgb(60, 60, 70)))
                     {
                         var sf = new StringFormat
                         {
                             Alignment = StringAlignment.Center,
                             LineAlignment = StringAlignment.Center
                         };
-                        g.DrawString("Drop\nImage", new Font("Segoe UI", 9F), brush, innerRect, sf);
+                        g.DrawString("Click to\nSelect Image", new Font("Segoe UI", 8F), brush, innerRect, sf);
                     }
                 }
 
                 g.ResetClip();
             }
 
-            // Circular mask indicator (shows 240x240 visible area)
+            // Circular mask indicator (shows 240x240 boundary)
             if (ShowMask)
             {
                 using (var maskPen = new Pen(Color.FromArgb(80, AccentColor), 2))
@@ -1564,20 +1599,20 @@ namespace PCMonitorClient
                 }
             }
 
-            // Outer ring
+            // Outer ring (highlight on drag)
             int ringWidth = _isDragOver ? 3 : 2;
             using (var pen = new Pen(_isDragOver ? AccentColor : Color.FromArgb(45, 45, 55), ringWidth))
             {
-                var ringRect = new Rectangle(x + 1, y + 1, size - 3, size - 3);
+                var ringRect = new Rectangle(x + 1, y + 1, panelSize - 3, panelSize - 3);
                 g.DrawEllipse(pen, ringRect);
             }
 
-            // Drag over glow
+            // Drag over glow effect
             if (_isDragOver)
             {
                 using (var glowPen = new Pen(Color.FromArgb(40, AccentColor), 6))
                 {
-                    var glowRect = new Rectangle(x + 3, y + 3, size - 7, size - 7);
+                    var glowRect = new Rectangle(x + 3, y + 3, panelSize - 7, panelSize - 7);
                     g.DrawEllipse(glowPen, glowRect);
                 }
             }

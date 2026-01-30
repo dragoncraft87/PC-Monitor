@@ -18,19 +18,19 @@
 static const char *TAG = "SS-MGR";
 
 /* =============================================================================
- * EXTERN: Compiled fallback images
+ * EXTERN: Compiled system icons (Desert-Spec v2.2)
  * ========================================================================== */
-extern const lv_image_dsc_t Sonic_Ring;
-extern const lv_image_dsc_t triforce;
-extern const lv_image_dsc_t DK_Fass;
-extern const lv_image_dsc_t PacMan;
+extern const lv_image_dsc_t CPU;
+extern const lv_image_dsc_t GPU;
+extern const lv_image_dsc_t RAM;
+extern const lv_image_dsc_t NET;
 
-/* Fallback image table */
+/* Fallback image table - maps to slot indices */
 static const lv_image_dsc_t *fallback_images[SS_IMG_COUNT] = {
-    &Sonic_Ring,
-    &triforce,
-    &DK_Fass,
-    &PacMan
+    &CPU,   /* SS_IMG_CPU = 0 */
+    &GPU,   /* SS_IMG_GPU = 1 */
+    &RAM,   /* SS_IMG_RAM = 2 */
+    &NET    /* SS_IMG_NET = 3 */
 };
 
 /* LittleFS paths table */
