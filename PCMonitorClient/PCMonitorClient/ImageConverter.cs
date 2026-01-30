@@ -82,25 +82,43 @@ namespace PCMonitorClient
 
         private static ConversionResult ConvertImage(Image<Rgba32> sourceImage)
         {
-            // Calculate resize dimensions (fit within 240x240, maintain aspect ratio)
             int srcWidth = sourceImage.Width;
             int srcHeight = sourceImage.Height;
 
-            float scale = Math.Min((float)TARGET_WIDTH / srcWidth, (float)TARGET_HEIGHT / srcHeight);
-            int newWidth = (int)(srcWidth * scale);
-            int newHeight = (int)(srcHeight * scale);
+            // NO-UPSCALE LOGIC: If image is smaller than 240x240, do NOT upscale
+            // Only downscale if larger than target
+            bool needsResize = (srcWidth > TARGET_WIDTH || srcHeight > TARGET_HEIGHT);
 
-            // Create 240x240 canvas with transparent background
-            using (var canvas = new Image<Rgba32>(TARGET_WIDTH, TARGET_HEIGHT, new Rgba32(0, 0, 0, 0)))
+            int newWidth, newHeight;
+            if (needsResize)
             {
-                // Resize source image
-                sourceImage.Mutate(x => x.Resize(newWidth, newHeight));
+                // Calculate downscale dimensions (fit within 240x240, maintain aspect ratio)
+                float scale = Math.Min((float)TARGET_WIDTH / srcWidth, (float)TARGET_HEIGHT / srcHeight);
+                newWidth = (int)(srcWidth * scale);
+                newHeight = (int)(srcHeight * scale);
+            }
+            else
+            {
+                // Keep original size (no upscaling)
+                newWidth = srcWidth;
+                newHeight = srcHeight;
+            }
+
+            // Create 240x240 canvas with BLACK background (not transparent)
+            // Black background ensures proper display on GC9A01
+            using (var canvas = new Image<Rgba32>(TARGET_WIDTH, TARGET_HEIGHT, new Rgba32(0, 0, 0, 255)))
+            {
+                // Only resize if needed (downscaling)
+                if (needsResize)
+                {
+                    sourceImage.Mutate(x => x.Resize(newWidth, newHeight));
+                }
 
                 // Center on canvas
                 int offsetX = (TARGET_WIDTH - newWidth) / 2;
                 int offsetY = (TARGET_HEIGHT - newHeight) / 2;
 
-                // Draw resized image onto canvas
+                // Draw image onto canvas (centered)
                 canvas.Mutate(x => x.DrawImage(sourceImage, new Point(offsetX, offsetY), 1f));
 
                 // Convert to RGB565A8

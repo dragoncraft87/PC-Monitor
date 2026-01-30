@@ -140,7 +140,8 @@ namespace PCMonitorClient
                 SendCommand = SendCommandToEsp,
                 IsConnected = () => _isConnected,
                 GetSerialPort = () => _activePort,
-                SetUploadMode = (mode) => _isUploadMode = mode
+                SetUploadMode = (mode) => _isUploadMode = mode,
+                GetAvailablePorts = GetAvailablePortNames
             };
 
             // ============================================================
@@ -429,6 +430,33 @@ namespace PCMonitorClient
             }
         }
 
+        /// <summary>
+        /// Returns list of available COM port names for SettingsForm.
+        /// </summary>
+        private string[] GetAvailablePortNames()
+        {
+            try
+            {
+                return SerialPort.GetPortNames();
+            }
+            catch
+            {
+                return new string[0];
+            }
+        }
+
+        /// <summary>
+        /// Updates SettingsForm connection status (thread-safe).
+        /// </summary>
+        private void UpdateSettingsFormStatus(bool connected, string portName = "")
+        {
+            try
+            {
+                _settingsForm.SetConnectionStatus(connected, portName, _collector?.IdentityHash ?? "");
+            }
+            catch { }
+        }
+
         private void RestartAsAdmin()
         {
             try
@@ -571,6 +599,7 @@ namespace PCMonitorClient
 
                             UpdateTrayIcon();
                             _statusForm.UpdateConnectionStatus("Connected: " + portName, true, _isLiteMode);
+                            UpdateSettingsFormStatus(true, portName);
 
                             // --- DATA LOOP ---
                             RunDataLoop(port, ct);
@@ -598,6 +627,7 @@ namespace PCMonitorClient
                     _isConnected = false;
                     UpdateTrayIcon();
                     _statusForm.UpdateConnectionStatus("Disconnected", false, _isLiteMode);
+                    UpdateSettingsFormStatus(false);
 
                     // If auto-detected, re-scan
                     if (_args.Length == 0) cliPort = null;
