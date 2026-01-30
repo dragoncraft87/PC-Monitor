@@ -36,7 +36,8 @@
       "Bash(cmd //c \"C:\\\\Espressif\\\\frameworks\\\\esp-idf-v5.4.1\\\\export.bat && idf.py build\")",
       "Bash(where:*)",
       "Bash(source:*)",
-      "Bash(powershell:*)"
+      "Bash(powershell:*)",
+      "WebFetch(domain:www.nuget.org)"
     ],
     "deny": [],
     "ask": []

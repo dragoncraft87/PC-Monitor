@@ -86,6 +86,7 @@ namespace PCMonitorClient
 
         private readonly NotifyIcon _trayIcon;
         private readonly StatusForm _statusForm;
+        private readonly SettingsForm _settingsForm;
         private readonly ContextMenuStrip _contextMenu;
         private readonly string[] _args;
 
@@ -111,6 +112,7 @@ namespace PCMonitorClient
         private volatile bool _isShuttingDown = false;
         private volatile bool _isConnected = false;
         private volatile bool _isLiteMode = false;
+        private volatile bool _isUploadMode = false;  // Pauses data loop during image upload
 
         public TrayContext(string[] args)
         {
@@ -131,10 +133,22 @@ namespace PCMonitorClient
             _statusForm = new StatusForm();
 
             // ============================================================
+            // 2b. SETTINGS FORM (UI Thread)
+            // ============================================================
+            _settingsForm = new SettingsForm
+            {
+                SendCommand = SendCommandToEsp,
+                IsConnected = () => _isConnected,
+                GetSerialPort = () => _activePort,
+                SetUploadMode = (mode) => _isUploadMode = mode
+            };
+
+            // ============================================================
             // 3. CONTEXT MENU
             // ============================================================
             _contextMenu = new ContextMenuStrip();
             _contextMenu.Items.Add("Show Status", null, (s, e) => ShowStatus());
+            _contextMenu.Items.Add("Settings...", null, (s, e) => ShowSettings());
             _contextMenu.Items.Add(new ToolStripSeparator());
 
             var adminItem = new ToolStripMenuItem("Restart as Admin", null, (s, e) => RestartAsAdmin());
@@ -373,6 +387,48 @@ namespace PCMonitorClient
             }
         }
 
+        private void ShowSettings()
+        {
+            if (_settingsForm.Visible)
+            {
+                _settingsForm.Activate();
+            }
+            else
+            {
+                _settingsForm.Show();
+            }
+        }
+
+        /// <summary>
+        /// Sends a command string to the ESP32 via serial port.
+        /// Thread-safe, can be called from UI.
+        /// </summary>
+        private void SendCommandToEsp(string command)
+        {
+            if (string.IsNullOrEmpty(command)) return;
+
+            lock (_portLock)
+            {
+                if (_activePort == null || !_activePort.IsOpen)
+                {
+                    _statusForm.AppendLog("[Cmd] Error: Not connected");
+                    return;
+                }
+
+                try
+                {
+                    string line = command.EndsWith("\n") ? command : command + "\n";
+                    _activePort.Write(line);
+                    _activePort.BaseStream.Flush();
+                    _statusForm.AppendLog("[Cmd] TX: " + command);
+                }
+                catch (Exception ex)
+                {
+                    _statusForm.AppendLog("[Cmd] Error: " + ex.Message);
+                }
+            }
+        }
+
         private void RestartAsAdmin()
         {
             try
@@ -578,6 +634,13 @@ namespace PCMonitorClient
             {
                 try
                 {
+                    // Pause data transmission during image upload
+                    if (_isUploadMode)
+                    {
+                        Thread.Sleep(100);
+                        continue;
+                    }
+
                     var s = _collector.GetStats();
 
                     // Format data string (matches ESP32 parser)

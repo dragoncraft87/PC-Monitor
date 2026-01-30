@@ -13,6 +13,8 @@
 
   <ItemGroup>
     <PackageReference Include="NvAPIWrapper.Net" Version="0.8.1.101" />
+    <!-- ImageSharp 3.x requires .NET 6+, use 2.x for .NET Framework 4.7.2 -->
+    <PackageReference Include="SixLabors.ImageSharp" Version="2.1.13" />
     <PackageReference Include="System.IO.Ports" Version="10.0.2" />
   </ItemGroup>
 
