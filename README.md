@@ -4,6 +4,8 @@
 
 Real-time visualization of PC hardware metrics on 4 round GC9A01 displays, powered by ESP32-S3.
 
+![Scarab Monitor (Development Prototype)](https://github.com/user-attachments/assets/937ad4dd-c676-4e93-8e60-af66cce4760b)
+Scarab Monitor (Development Prototype) - Running on ESP32-S3 with GC9A01 Circular Display via USB Serial.
 ---
 
 ## Why "Desert-Spec"?
