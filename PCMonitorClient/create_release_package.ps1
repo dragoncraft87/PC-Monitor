@@ -6,7 +6,7 @@ $ScriptPath = $PSScriptRoot
 $ProjectPath = Join-Path $ScriptPath "PCMonitorClient"
 $DistPath = Join-Path $ScriptPath "Dist"
 $Timestamp = Get-Date -Format "yyyy-MM-dd_HH-mm"
-$ZipName = "Scarab_Monitor_v2.2_$Timestamp.zip"
+$ZipName = "Scarab_Monitor_v2.3_$Timestamp.zip"
 
 Write-Host ">>> [1/5] Initialisiere Build-Umgebung..." -ForegroundColor Cyan
 # Alte Builds bereinigen
@@ -37,8 +37,18 @@ foreach ($file in $CriticalFiles) {
 Write-Host ">>> [4/5] Erstelle README..." -ForegroundColor Cyan
 $ReadmeContent = @"
 SCARAB MONITOR - DESERT SPEC EDITION
-Version: v2.2 (Build $Timestamp)
+Version: v2.3 (Build $Timestamp)
 ------------------------------------
+
+NEUERUNGEN v2.3:
+- Dynamische Screensaver-Hintergrundfarben pro Slot
+- Transparente PNGs werden über konfigurierbare Farbe gerendert
+- Farben bleiben nach Neustart erhalten (LittleFS)
+
+NEUERUNGEN v2.2:
+- SCARAB Bildformat mit Header und CRC32 Verifikation
+- RGB565A8 PLANAR Format für LVGL v9
+- Pause/Resume für manuelle Übertragungssteuerung
 
 INSTALLATION:
 1. Entpacken Sie diesen Ordner an einen beliebigen Ort (z.B. C:\Tools\Scarab).

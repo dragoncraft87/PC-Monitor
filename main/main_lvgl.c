@@ -1,8 +1,19 @@
 /**
  * @file main_lvgl.c
- * @brief PC Monitor - Desert-Spec v2.1 (Hardened Edition)
+ * @brief PC Monitor - Desert-Spec v2.3
  *
- * Thread-Safety Hardening (v2.1):
+ * v2.3 - Dynamic Screensaver Backgrounds:
+ * - SET_SS_BG command for per-slot background colors
+ * - Transparent PNG overlay on configurable background
+ * - Colors persist to LittleFS
+ *
+ * v2.2 - Image Upload System:
+ * - SCARAB image format with 16-byte header
+ * - RGB565A8 PLANAR format for LVGL v9
+ * - CRC32 verification, chunked USB transfer
+ * - Pause/Resume for manual transmission control
+ *
+ * v2.1 - Thread-Safety Hardening:
  * - NEVER use portMAX_DELAY (causes freezes)
  * - All mutex operations have timeouts with fail-safe skip behavior
  * - Task Watchdog (TWDT) triggers hard reset after 5s hang
@@ -255,7 +266,7 @@ static void lvgl_timer_task(void *arg)
 void app_main(void)
 {
     ESP_LOGI(TAG, "===========================================");
-    ESP_LOGI(TAG, "PC Monitor - Desert-Spec v2.1 (Hardened)");
+    ESP_LOGI(TAG, "PC Monitor - Desert-Spec v2.3");
     ESP_LOGI(TAG, "===========================================");
 
     /* Initialize Task Watchdog Timer (TWDT)

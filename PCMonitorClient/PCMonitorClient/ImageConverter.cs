@@ -112,9 +112,9 @@ namespace PCMonitorClient
                 newHeight = srcHeight;
             }
 
-            // Create 240x240 canvas with BLACK background (not transparent)
-            // Black background ensures proper display on GC9A01
-            using (var canvas = new Image<Rgba32>(TARGET_WIDTH, TARGET_HEIGHT, new Rgba32(0, 0, 0, 255)))
+            // Create 240x240 canvas with TRANSPARENT background (v2.3)
+            // ESP32 renders transparent areas over gui_settings.ss_bg_color
+            using (var canvas = new Image<Rgba32>(TARGET_WIDTH, TARGET_HEIGHT, new Rgba32(0, 0, 0, 0)))
             {
                 // Only resize if needed (downscaling)
                 if (needsResize)
