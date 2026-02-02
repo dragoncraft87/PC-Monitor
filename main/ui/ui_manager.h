@@ -175,4 +175,25 @@ lv_obj_t *ui_manager_create_status_dot(lv_obj_t *parent);
  */
 lv_obj_t *ui_manager_create_screensaver(lv_obj_t *parent, lv_color_t bg_color, const lv_image_dsc_t *icon_src);
 
+/**
+ * @brief Create a screensaver overlay with slot tracking for hot-swap
+ * @param parent Parent LVGL object
+ * @param bg_color Background color
+ * @param icon_src Image source for the centered icon
+ * @param slot_index Image slot index (0-3) for tracking, -1 to skip tracking
+ * @return Created screensaver overlay (hidden by default)
+ */
+lv_obj_t *ui_manager_create_screensaver_ex(lv_obj_t *parent, lv_color_t bg_color,
+                                           const lv_image_dsc_t *icon_src, int slot_index);
+
+/**
+ * @brief Callback for screensaver image reload (called by ss_process_updates)
+ * @param slot Image slot that was reloaded
+ * @param new_dsc New image descriptor
+ *
+ * This function refreshes the LVGL image widget source pointer after a new
+ * image has been uploaded and loaded. Must be called from UI thread.
+ */
+void ui_manager_on_image_reload(int slot, const lv_image_dsc_t *new_dsc);
+
 #endif /* UI_MANAGER_H */

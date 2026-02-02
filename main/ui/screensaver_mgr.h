@@ -115,4 +115,40 @@ bool ss_image_delete(ss_image_slot_t slot);
  */
 bool ss_image_handle_command(const char *line);
 
+/* =============================================================================
+ * THREAD-SAFE IMAGE RELOAD API
+ *
+ * The image upload happens in the USB task, but LVGL rendering happens in the
+ * UI task. To avoid race conditions (Memory Assassination bug), we use a flag-
+ * based system where the USB task sets a flag and the UI task processes it.
+ * ========================================================================== */
+
+/**
+ * @brief Callback type for image reload notification
+ * @param slot The slot that was reloaded
+ * @param new_dsc The new image descriptor (call lv_image_set_src with this)
+ */
+typedef void (*ss_image_reload_cb_t)(ss_image_slot_t slot, const lv_image_dsc_t *new_dsc);
+
+/**
+ * @brief Register callback for image reload events
+ * @param callback Function to call when an image is reloaded
+ *
+ * The callback will be called from ss_process_updates() (UI thread).
+ */
+void ss_set_reload_callback(ss_image_reload_cb_t callback);
+
+/**
+ * @brief Process pending image reloads (MUST be called from UI thread!)
+ *
+ * Call this function in the main loop (e.g., display_update_task) while
+ * holding the LVGL mutex. It checks for pending reload flags set by the
+ * USB task and safely reloads the images.
+ *
+ * Thread-Safety: This function performs the actual memory operations
+ * (free old buffer, allocate new buffer) in the UI thread, preventing
+ * race conditions with LVGL rendering.
+ */
+void ss_process_updates(void);
+
 #endif /* SCREENSAVER_MGR_H */

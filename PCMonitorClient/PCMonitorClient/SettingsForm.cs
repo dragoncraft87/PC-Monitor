@@ -35,6 +35,8 @@ namespace PCMonitorClient
         public Func<bool> IsConnected { get; set; }
         public Func<System.IO.Ports.SerialPort> GetSerialPort { get; set; }
         public Action<bool> SetUploadMode { get; set; }
+        public Action<bool> SetPaused { get; set; }
+        public Func<bool> IsPaused { get; set; }
         public Func<string[]> GetAvailablePorts { get; set; }
         public Action<string> OnDeviceSelected { get; set; }
 
@@ -55,6 +57,7 @@ namespace PCMonitorClient
         private Button _btnSetDeviceName;
         private ComboBox _cboDevices;
         private Button _btnRefresh;
+        private Button _btnPauseResume;
 
         // Live preview panels (1x4 grid)
         private CircularDisplayPanel[] _displayPanels;
@@ -82,6 +85,11 @@ namespace PCMonitorClient
         private CancellationTokenSource _uploadCts;
         private bool _isUploading;
 
+        // Debug log panel (fixed, always visible at bottom)
+        private RichTextBox _rtbDebugLog;
+        private Panel _panelDebugLog;
+        private Button _btnClearLog;
+
         // Profiles directory
         private static readonly string ProfilesDir = Path.Combine(
             Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
@@ -91,6 +99,9 @@ namespace PCMonitorClient
         {
             InitializeComponent();
             EnsureProfilesDirectory();
+
+            // Initial log message to verify logging works
+            Load += (s, e) => AppendDebugLog("SettingsForm loaded - Debug logging active");
         }
 
         private void InitializeComponent()
@@ -100,10 +111,11 @@ namespace PCMonitorClient
             AutoScaleDimensions = new SizeF(96F, 96F);
 
             Text = "Scarab Monitor - Device Manager";
-            Size = new Size(900, 680);
+            Size = new Size(900, 860);  // Increased height for fixed log panel
             StartPosition = FormStartPosition.CenterScreen;
-            FormBorderStyle = FormBorderStyle.FixedSingle;
+            FormBorderStyle = FormBorderStyle.Sizable;
             MaximizeBox = false;
+            MinimumSize = new Size(900, 860);
             BackColor = ThemeBgDark;
             ForeColor = ThemeTextPrimary;
             Font = new Font("Segoe UI", 9F);
@@ -149,6 +161,9 @@ namespace PCMonitorClient
             _tabControl.TabPages.Add(_tabProfiles);
 
             Controls.Add(_tabControl);
+
+            // === Debug Log Panel (Bottom, Collapsible) ===
+            CreateDebugLogPanel();
         }
 
         private void TabControl_DrawItem(object sender, DrawItemEventArgs e)
@@ -172,6 +187,99 @@ namespace PCMonitorClient
                 e.Graphics.DrawString(tab.Text, Font, brush, bounds, sf);
             }
         }
+
+        #region Debug Log Panel
+
+        private void CreateDebugLogPanel()
+        {
+            // Container panel - FIXED at bottom, always visible
+            _panelDebugLog = new Panel
+            {
+                Dock = DockStyle.Bottom,
+                Height = 180,
+                BackColor = Color.Black,
+                Padding = new Padding(5)
+            };
+
+            // Clear button - floating top-right
+            _btnClearLog = new Button
+            {
+                Text = "Clear",
+                Size = new Size(70, 24),
+                FlatStyle = FlatStyle.Flat,
+                ForeColor = Color.White,
+                BackColor = Color.FromArgb(50, 50, 50),
+                Cursor = Cursors.Hand,
+                Anchor = AnchorStyles.Top | AnchorStyles.Right
+            };
+            _btnClearLog.FlatAppearance.BorderColor = Color.Gray;
+            _btnClearLog.Click += (s, e) =>
+            {
+                _rtbDebugLog.Clear();
+                _rtbDebugLog.AppendText($"[{DateTime.Now:HH:mm:ss.fff}] Log cleared\n");
+            };
+
+            // RichTextBox - fills entire panel
+            _rtbDebugLog = new RichTextBox
+            {
+                Dock = DockStyle.Fill,
+                BackColor = Color.Black,
+                ForeColor = Color.LimeGreen,
+                Font = new Font("Consolas", 9F),
+                ReadOnly = true,
+                BorderStyle = BorderStyle.None,
+                ScrollBars = RichTextBoxScrollBars.Vertical,
+                WordWrap = false
+            };
+
+            // Add controls to panel (order matters for docking)
+            _panelDebugLog.Controls.Add(_rtbDebugLog);
+            _panelDebugLog.Controls.Add(_btnClearLog);
+
+            // Position clear button after adding (needs parent for anchor to work)
+            _btnClearLog.Location = new Point(_panelDebugLog.Width - _btnClearLog.Width - 10, 5);
+
+            // Add panel to form
+            Controls.Add(_panelDebugLog);
+
+            // Initial message
+            _rtbDebugLog.AppendText($"[{DateTime.Now:HH:mm:ss.fff}] Debug Log Panel initialized (Fixed Mode)\n");
+        }
+
+        /// <summary>
+        /// Appends a timestamped message to the debug log (thread-safe).
+        /// </summary>
+        public void AppendDebugLog(string message)
+        {
+            if (_rtbDebugLog == null || _rtbDebugLog.IsDisposed)
+                return;
+
+            if (InvokeRequired)
+            {
+                try
+                {
+                    BeginInvoke((MethodInvoker)delegate { AppendDebugLog(message); });
+                }
+                catch { }
+                return;
+            }
+
+            try
+            {
+                string timestamp = DateTime.Now.ToString("HH:mm:ss.fff");
+                _rtbDebugLog.AppendText($"[{timestamp}] {message}\n");
+
+                // Auto-scroll to bottom
+                _rtbDebugLog.SelectionStart = _rtbDebugLog.TextLength;
+                _rtbDebugLog.ScrollToCaret();
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"AppendDebugLog failed: {ex.Message}");
+            }
+        }
+
+        #endregion
 
         #region Device Status Bar
 
@@ -278,7 +386,57 @@ namespace PCMonitorClient
             _btnRefresh.Click += (s, e) => RefreshDeviceList();
             _panelDeviceStatus.Controls.Add(_btnRefresh);
 
+            // Pause/Resume button (prominent, next to status)
+            _btnPauseResume = new Button
+            {
+                Text = "⏸ Pause",
+                Location = new Point(170, 6),
+                Size = new Size(90, 26),
+                FlatStyle = FlatStyle.Flat,
+                ForeColor = Color.White,
+                BackColor = Color.FromArgb(200, 130, 0),  // Orange
+                Font = new Font("Segoe UI", 9F, FontStyle.Bold),
+                Cursor = Cursors.Hand
+            };
+            _btnPauseResume.FlatAppearance.BorderColor = Color.FromArgb(255, 180, 60);
+            _btnPauseResume.FlatAppearance.MouseOverBackColor = Color.FromArgb(230, 150, 20);
+            _btnPauseResume.Click += BtnPauseResume_Click;
+            _panelDeviceStatus.Controls.Add(_btnPauseResume);
+
             Controls.Add(_panelDeviceStatus);
+        }
+
+        private void BtnPauseResume_Click(object sender, EventArgs e)
+        {
+            if (SetPaused == null || IsPaused == null) return;
+
+            bool currentlyPaused = IsPaused();
+            bool newState = !currentlyPaused;
+
+            SetPaused(newState);
+            UpdatePauseButtonState(newState);
+
+            AppendDebugLog(newState ? "Data transmission PAUSED by user" : "Data transmission RESUMED");
+        }
+
+        private void UpdatePauseButtonState(bool isPaused)
+        {
+            if (_btnPauseResume == null) return;
+
+            if (isPaused)
+            {
+                _btnPauseResume.Text = "▶ Resume";
+                _btnPauseResume.BackColor = Color.FromArgb(0, 150, 80);  // Green
+                _btnPauseResume.FlatAppearance.BorderColor = Color.FromArgb(0, 200, 100);
+                _btnPauseResume.FlatAppearance.MouseOverBackColor = Color.FromArgb(0, 180, 100);
+            }
+            else
+            {
+                _btnPauseResume.Text = "⏸ Pause";
+                _btnPauseResume.BackColor = Color.FromArgb(200, 130, 0);  // Orange
+                _btnPauseResume.FlatAppearance.BorderColor = Color.FromArgb(255, 180, 60);
+                _btnPauseResume.FlatAppearance.MouseOverBackColor = Color.FromArgb(230, 150, 20);
+            }
         }
 
         private void SetDeviceName()
@@ -1201,8 +1359,12 @@ namespace PCMonitorClient
 
         private async Task UploadImageAsync(string filePath, ImageSlot slot)
         {
+            // Immediate debug output
+            AppendDebugLog($"UploadImageAsync called: file={Path.GetFileName(filePath)}, slot={slot}");
+
             if (GetSerialPort == null)
             {
+                AppendDebugLog("ERROR: GetSerialPort delegate is null");
                 UpdateUploadStatus("Error: No serial port", false);
                 return;
             }
@@ -1210,17 +1372,28 @@ namespace PCMonitorClient
             var port = GetSerialPort();
             if (port == null || !port.IsOpen)
             {
+                AppendDebugLog($"ERROR: Port is null={port == null} or not open");
                 UpdateUploadStatus("Error: Port not open", false);
                 return;
             }
+
+            AppendDebugLog($"Port {port.PortName} is open, starting upload process...");
 
             _isUploading = true;
             _uploadCts = new CancellationTokenSource();
             SetUploadMode?.Invoke(true);
 
+            // Wait for data loop to pause (avoid race condition with PC stats transmission)
+            await Task.Delay(200);
+
             try
             {
                 var uploader = new ImageUploader(port);
+                AppendDebugLog("ImageUploader instance created, subscribing to events...");
+
+                // Subscribe to LogMessage for debug output
+                uploader.LogMessage += (s, msg) => AppendDebugLog($"[Upload] {msg}");
+
                 uploader.ProgressChanged += (s, p) =>
                 {
                     BeginInvoke((MethodInvoker)delegate
@@ -1230,15 +1403,18 @@ namespace PCMonitorClient
                     });
                 };
 
+                AppendDebugLog($"=== Starting upload: {Path.GetFileName(filePath)} -> Slot {slot} ===");
                 UpdateUploadStatus($"Converting image for {GetSlotName((int)slot)}...", true);
                 _progressUpload.Value = 0;
 
                 bool success = await uploader.UploadImageAsync(filePath, slot, _uploadCts.Token);
 
+                AppendDebugLog(success ? "=== Upload completed successfully ===" : "=== Upload FAILED ===");
                 UpdateUploadStatus(success ? "Upload complete!" : "Upload failed!", success);
             }
             catch (Exception ex)
             {
+                AppendDebugLog($"=== EXCEPTION: {ex.Message} ===");
                 UpdateUploadStatus($"Error: {ex.Message}", false);
             }
             finally

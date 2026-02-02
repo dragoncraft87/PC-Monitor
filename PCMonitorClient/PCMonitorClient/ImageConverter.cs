@@ -13,11 +13,19 @@ namespace PCMonitorClient
     /// Converts images to RGB565A8 format for ESP32 LVGL displays.
     /// RGB565A8 = 16-bit color (RGB565) + 8-bit alpha channel (separate plane)
     /// Total: 3 bytes per pixel (2 for color, 1 for alpha)
+    ///
+    /// Output format: 16-byte SCARAB header + pixel data
     /// </summary>
     public static class ImageConverter
     {
         public const int TARGET_WIDTH = 240;
         public const int TARGET_HEIGHT = 240;
+
+        // SCARAB image header constants (must match ESP32 scarab_img_header_t)
+        private const uint SCARAB_IMG_MAGIC = 0x53434152;  // "SCAR" in little-endian
+        private const int SCARAB_HEADER_SIZE = 16;
+        private const byte SCARAB_FORMAT_RGB565A8 = 1;     // 0=RGB565, 1=RGB565A8
+        private const byte SCARAB_VERSION = 1;
 
         /// <summary>
         /// Result of image conversion
@@ -30,7 +38,7 @@ namespace PCMonitorClient
             /// <summary>Alpha channel data (1 byte per pixel, row-major)</summary>
             public byte[] AlphaData { get; set; }
 
-            /// <summary>Combined RGB565A8 data (ColorData + AlphaData)</summary>
+            /// <summary>Combined data: 16-byte SCARAB header + ColorData + AlphaData</summary>
             public byte[] CombinedData { get; set; }
 
             /// <summary>Image width (always 240)</summary>
@@ -126,45 +134,110 @@ namespace PCMonitorClient
             }
         }
 
+        /// <summary>
+        /// Extracts RGB565A8 data in LVGL v9 PLANAR format.
+        ///
+        /// LVGL v9 RGB565A8 (LV_COLOR_FORMAT_RGB565A8 = 20 / 0x14) layout:
+        /// ┌─────────────────────────────────────────────────────────┐
+        /// │ Block 1: RGB565 color data (W × H × 2 bytes)            │
+        /// │   - Row 0: Pixel[0,0], Pixel[1,0], ... Pixel[W-1,0]     │
+        /// │   - Row 1: Pixel[0,1], Pixel[1,1], ... Pixel[W-1,1]     │
+        /// │   - ...                                                  │
+        /// │   - Each pixel: 2 bytes Little-Endian (low, high)       │
+        /// ├─────────────────────────────────────────────────────────┤
+        /// │ Block 2: Alpha data (W × H × 1 byte)                    │
+        /// │   - Row 0: Alpha[0,0], Alpha[1,0], ... Alpha[W-1,0]     │
+        /// │   - Row 1: Alpha[0,1], Alpha[1,1], ... Alpha[W-1,1]     │
+        /// │   - ...                                                  │
+        /// │   - Each alpha: 1 byte (0-255)                          │
+        /// └─────────────────────────────────────────────────────────┘
+        ///
+        /// IMPORTANT: This is PLANAR format (NOT interleaved!)
+        /// - Color and alpha are stored in separate contiguous blocks
+        /// - Stride for LVGL = width × 2 (RGB565 row width)
+        /// </summary>
         private static ConversionResult ExtractRgb565A8(Image<Rgba32> image)
         {
-            int pixelCount = TARGET_WIDTH * TARGET_HEIGHT;
+            int pixelCount = TARGET_WIDTH * TARGET_HEIGHT;  // 57,600 pixels
 
-            // RGB565: 2 bytes per pixel (57,600 bytes total)
-            byte[] colorData = new byte[pixelCount * 2];
+            // Block 1: RGB565 color data - 2 bytes per pixel (115,200 bytes total)
+            byte[] rgbData = new byte[pixelCount * 2];
 
-            // Alpha: 1 byte per pixel (57,600 bytes total)
+            // Block 2: Alpha channel data - 1 byte per pixel (57,600 bytes total)
             byte[] alphaData = new byte[pixelCount];
 
-            int colorIdx = 0;
+            int rgbIdx = 0;
             int alphaIdx = 0;
 
+            // Iterate row by row, column by column (row-major order)
             for (int y = 0; y < TARGET_HEIGHT; y++)
             {
                 for (int x = 0; x < TARGET_WIDTH; x++)
                 {
                     Rgba32 pixel = image[x, y];
 
-                    // Convert to RGB565 (5 bits red, 6 bits green, 5 bits blue)
+                    // Convert RGB888 to RGB565 (5-6-5 bits)
                     ushort rgb565 = ToRgb565(pixel.R, pixel.G, pixel.B);
 
-                    // Store as little-endian (ESP32 is little-endian)
-                    colorData[colorIdx++] = (byte)(rgb565 & 0xFF);
-                    colorData[colorIdx++] = (byte)((rgb565 >> 8) & 0xFF);
+                    // Store RGB565 in Little-Endian byte order (ESP32 native)
+                    rgbData[rgbIdx++] = (byte)(rgb565 & 0xFF);         // Low byte first
+                    rgbData[rgbIdx++] = (byte)((rgb565 >> 8) & 0xFF);  // High byte second
 
-                    // Store alpha
+                    // Store alpha channel (0-255)
                     alphaData[alphaIdx++] = pixel.A;
                 }
             }
 
-            // Combine: ColorData followed by AlphaData (172,800 bytes total)
-            byte[] combinedData = new byte[colorData.Length + alphaData.Length];
-            Buffer.BlockCopy(colorData, 0, combinedData, 0, colorData.Length);
-            Buffer.BlockCopy(alphaData, 0, combinedData, colorData.Length, alphaData.Length);
+            // Total pixel data: RGB block + Alpha block = 172,800 bytes
+            int pixelDataSize = rgbData.Length + alphaData.Length;
+
+            // Final output: 16-byte SCARAB header + pixel data
+            byte[] combinedData = new byte[SCARAB_HEADER_SIZE + pixelDataSize];
+
+            // ═══════════════════════════════════════════════════════════
+            // Build 16-byte SCARAB header (matches ESP32 scarab_img_header_t)
+            // ═══════════════════════════════════════════════════════════
+            int offset = 0;
+
+            // [0-3] magic: uint32 - "SCAR" = 0x53434152 (Little-Endian)
+            combinedData[offset++] = 0x52;  // 'R'
+            combinedData[offset++] = 0x41;  // 'A'
+            combinedData[offset++] = 0x43;  // 'C'
+            combinedData[offset++] = 0x53;  // 'S'
+
+            // [4-5] width: uint16 (Little-Endian)
+            combinedData[offset++] = (byte)(TARGET_WIDTH & 0xFF);
+            combinedData[offset++] = (byte)((TARGET_WIDTH >> 8) & 0xFF);
+
+            // [6-7] height: uint16 (Little-Endian)
+            combinedData[offset++] = (byte)(TARGET_HEIGHT & 0xFF);
+            combinedData[offset++] = (byte)((TARGET_HEIGHT >> 8) & 0xFF);
+
+            // [8] format: uint8 - 1 = SCARAB_FMT_RGB565A8
+            combinedData[offset++] = SCARAB_FORMAT_RGB565A8;
+
+            // [9] version: uint8
+            combinedData[offset++] = SCARAB_VERSION;
+
+            // [10-11] reserved: uint16 - padding for 4-byte alignment
+            combinedData[offset++] = 0;
+            combinedData[offset++] = 0;
+
+            // [12-15] data_size: uint32 - pixel data size (Little-Endian)
+            combinedData[offset++] = (byte)(pixelDataSize & 0xFF);
+            combinedData[offset++] = (byte)((pixelDataSize >> 8) & 0xFF);
+            combinedData[offset++] = (byte)((pixelDataSize >> 16) & 0xFF);
+            combinedData[offset++] = (byte)((pixelDataSize >> 24) & 0xFF);
+
+            // ═══════════════════════════════════════════════════════════
+            // Append pixel data in PLANAR format: RGB block, then Alpha block
+            // ═══════════════════════════════════════════════════════════
+            Buffer.BlockCopy(rgbData, 0, combinedData, SCARAB_HEADER_SIZE, rgbData.Length);
+            Buffer.BlockCopy(alphaData, 0, combinedData, SCARAB_HEADER_SIZE + rgbData.Length, alphaData.Length);
 
             return new ConversionResult
             {
-                ColorData = colorData,
+                ColorData = rgbData,
                 AlphaData = alphaData,
                 CombinedData = combinedData,
                 Width = TARGET_WIDTH,

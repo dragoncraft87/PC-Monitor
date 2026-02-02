@@ -113,6 +113,7 @@ namespace PCMonitorClient
         private volatile bool _isConnected = false;
         private volatile bool _isLiteMode = false;
         private volatile bool _isUploadMode = false;  // Pauses data loop during image upload
+        private volatile bool _isPaused = false;      // Manual pause by user
 
         public TrayContext(string[] args)
         {
@@ -141,6 +142,8 @@ namespace PCMonitorClient
                 IsConnected = () => _isConnected,
                 GetSerialPort = () => _activePort,
                 SetUploadMode = (mode) => _isUploadMode = mode,
+                SetPaused = (paused) => _isPaused = paused,
+                IsPaused = () => _isPaused,
                 GetAvailablePorts = GetAvailablePortNames
             };
 
@@ -664,10 +667,10 @@ namespace PCMonitorClient
             {
                 try
                 {
-                    // Pause data transmission during image upload
-                    if (_isUploadMode)
+                    // Pause data transmission during image upload OR manual pause
+                    if (_isUploadMode || _isPaused)
                     {
-                        Thread.Sleep(100);
+                        Thread.Sleep(200);
                         continue;
                     }
 

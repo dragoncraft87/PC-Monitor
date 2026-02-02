@@ -72,18 +72,39 @@ typedef struct {
 static ss_loaded_image_t loaded_images[SS_IMG_COUNT] = {0};
 static img_upload_ctx_t upload_ctx = {0};
 
+/* Thread-safe reload/delete flags (set by USB task, processed by UI task) */
+static volatile bool s_reload_pending[SS_IMG_COUNT] = {0};
+static volatile bool s_delete_pending[SS_IMG_COUNT] = {0};
+
+/* Callback for UI notification when image is reloaded */
+static ss_image_reload_cb_t s_reload_callback = NULL;
+
 /* =============================================================================
- * CRC32 CALCULATION
+ * CRC32 CALCULATION (Incremental-safe)
+ *
+ * Usage for incremental CRC:
+ *   uint32_t crc = CRC32_INIT;
+ *   crc = crc32_update(crc, chunk1, len1);
+ *   crc = crc32_update(crc, chunk2, len2);
+ *   final_crc = crc32_finalize(crc);
  * ========================================================================== */
+#define CRC32_INIT 0xFFFFFFFF
+
 static uint32_t crc32_update(uint32_t crc, const uint8_t *data, size_t len)
 {
-    crc = ~crc;
+    /* NOTE: crc must be initialized with CRC32_INIT (0xFFFFFFFF) for first call.
+     * This function does NOT invert input/output - caller handles that. */
     while (len--) {
         crc ^= *data++;
         for (int i = 0; i < 8; i++) {
             crc = (crc >> 1) ^ (0xEDB88320 & ~((crc & 1) - 1));
         }
     }
+    return crc;
+}
+
+static uint32_t crc32_finalize(uint32_t crc)
+{
     return ~crc;
 }
 
@@ -189,9 +210,11 @@ bool ss_image_load(ss_image_slot_t slot)
 
     img->lvgl_dsc.header.w = header.width;
     img->lvgl_dsc.header.h = header.height;
-    img->lvgl_dsc.header.stride = (header.format == SCARAB_FMT_RGB565A8)
-                                   ? header.width * 3
-                                   : header.width * 2;
+    /* RGB565A8 is PLANAR format in LVGL v9:
+     * - First block: All RGB565 pixels (width * height * 2 bytes)
+     * - Second block: All Alpha values (width * height * 1 byte)
+     * Stride = row width in bytes for RGB565 data = width * 2 */
+    img->lvgl_dsc.header.stride = header.width * 2;  /* Same for both formats */
     img->lvgl_dsc.header.cf = (header.format == SCARAB_FMT_RGB565A8)
                                ? LV_COLOR_FORMAT_RGB565A8
                                : LV_COLOR_FORMAT_RGB565;
@@ -335,7 +358,7 @@ static bool handle_img_begin(const char *line)
     upload_ctx.slot = (ss_image_slot_t)slot;
     upload_ctx.expected_size = (uint32_t)size;
     upload_ctx.received_size = 0;
-    upload_ctx.crc32 = 0;
+    upload_ctx.crc32 = CRC32_INIT;  /* Must start with 0xFFFFFFFF for incremental CRC */
 
     ESP_LOGI(TAG, "Upload started: slot=%d, size=%lu", slot, size);
     send_response("IMG_OK:BEGIN\n");
@@ -416,10 +439,13 @@ static bool handle_img_end(const char *line)
         return true;
     }
 
-    if (upload_ctx.crc32 != (uint32_t)expected_crc) {
+    /* Finalize CRC (apply final XOR) */
+    uint32_t final_crc = crc32_finalize(upload_ctx.crc32);
+
+    if (final_crc != (uint32_t)expected_crc) {
         ESP_LOGE(TAG, "CRC mismatch: got 0x%08" PRIX32 ", expected 0x%08X",
-                 upload_ctx.crc32, expected_crc);
-        send_response("IMG_ERR:CRC:%08" PRIX32 "\n", upload_ctx.crc32);
+                 final_crc, expected_crc);
+        send_response("IMG_ERR:CRC:%08" PRIX32 "\n", final_crc);
 
         heap_caps_free(upload_ctx.buffer);
         upload_ctx.buffer = NULL;
@@ -448,13 +474,12 @@ static bool handle_img_end(const char *line)
     upload_ctx.buffer = NULL;
     upload_ctx.state = IMG_UPLOAD_COMPLETE;
 
-    if (ss_image_load(upload_ctx.slot)) {
-        ESP_LOGI(TAG, "Upload complete: slot=%d, CRC=0x%08" PRIX32,
-                 upload_ctx.slot, upload_ctx.crc32);
-        send_response("IMG_OK:COMPLETE:%d\n", upload_ctx.slot);
-    } else {
-        send_response("IMG_ERR:LOAD\n");
-    }
+    /* Mark slot for reload in UI thread (Thread-Safety Fix)
+     * DO NOT call ss_image_load() here - it would cause race condition
+     * with LVGL rendering! The UI thread will process this flag. */
+    ESP_LOGI(TAG, "Upload complete, marking slot %d for reload", upload_ctx.slot);
+    s_reload_pending[upload_ctx.slot] = true;
+    send_response("IMG_OK:COMPLETE:%d\n", upload_ctx.slot);
 
     upload_ctx.state = IMG_UPLOAD_IDLE;
     return true;
@@ -487,7 +512,11 @@ static bool handle_img_delete(const char *line)
         return true;
     }
 
-    ss_image_delete((ss_image_slot_t)slot);
+    /* Mark slot for deletion in UI thread (Thread-Safety Fix)
+     * DO NOT call ss_image_delete() here - it would cause race condition
+     * with LVGL rendering! The UI thread will process this flag. */
+    ESP_LOGI(TAG, "Marking slot %d for deletion", slot);
+    s_delete_pending[slot] = true;
     send_response("IMG_OK:DELETE:%d\n", slot);
     return true;
 }
@@ -538,4 +567,61 @@ bool ss_image_handle_command(const char *line)
     }
 
     return false;
+}
+
+/* =============================================================================
+ * THREAD-SAFE IMAGE RELOAD SYSTEM
+ *
+ * This function MUST be called from the UI/LVGL thread (e.g., display_update_task).
+ * It processes pending reload flags set by the USB task and safely reloads images.
+ * This avoids the "Memory Assassination" bug where freeing memory in the USB task
+ * while LVGL is rendering causes LoadProhibited exceptions.
+ * ========================================================================== */
+
+void ss_set_reload_callback(ss_image_reload_cb_t callback)
+{
+    s_reload_callback = callback;
+}
+
+void ss_process_updates(void)
+{
+    for (int i = 0; i < SS_IMG_COUNT; i++) {
+        /* Process delete requests first (takes priority over reload) */
+        if (s_delete_pending[i]) {
+            /* Clear flag first (atomic on ESP32) */
+            s_delete_pending[i] = false;
+            s_reload_pending[i] = false;  /* Cancel any pending reload */
+
+            /* Now safely delete the image (we're in the UI thread) */
+            ss_image_delete((ss_image_slot_t)i);
+            ESP_LOGI(TAG, "Slot %d deleted in UI thread", i);
+
+            /* Notify UI to refresh (will get fallback image) */
+            if (s_reload_callback) {
+                s_reload_callback((ss_image_slot_t)i, ss_image_get_dsc((ss_image_slot_t)i));
+            }
+        }
+        /* Process reload requests */
+        else if (s_reload_pending[i]) {
+            /* Clear flag first (atomic on ESP32) */
+            s_reload_pending[i] = false;
+
+            /* Now safely load the image (we're in the UI thread) */
+            if (ss_image_load((ss_image_slot_t)i)) {
+                ESP_LOGI(TAG, "Slot %d hot-swapped successfully in UI thread", i);
+
+                /* Notify UI to refresh the image source pointer */
+                if (s_reload_callback) {
+                    s_reload_callback((ss_image_slot_t)i, ss_image_get_dsc((ss_image_slot_t)i));
+                }
+            } else {
+                ESP_LOGW(TAG, "Slot %d reload failed, using fallback", i);
+
+                /* Still notify UI to refresh (will get fallback image) */
+                if (s_reload_callback) {
+                    s_reload_callback((ss_image_slot_t)i, ss_image_get_dsc((ss_image_slot_t)i));
+                }
+            }
+        }
+    }
 }

@@ -4,6 +4,7 @@
  */
 
 #include "ui_manager.h"
+#include "screensaver_mgr.h"
 #include "../gui_settings.h"
 #include "../storage/hw_identity.h"
 #include "../screens/screens_lvgl.h"
@@ -20,6 +21,9 @@ static ui_screensavers_t *s_screensavers = NULL;
 static ui_status_dots_t *s_dots = NULL;
 static SemaphoreHandle_t s_lvgl_mutex = NULL;
 static bool s_screensaver_active = false;
+
+/* Screensaver image widget handles (for hot-swap updates) */
+static lv_obj_t *s_ss_images[4] = {NULL, NULL, NULL, NULL};
 
 /* Lock statistics for debugging */
 static uint32_t s_lock_timeouts = 0;
@@ -414,7 +418,8 @@ lv_obj_t *ui_manager_create_status_dot(lv_obj_t *parent)
     return dot;
 }
 
-lv_obj_t *ui_manager_create_screensaver(lv_obj_t *parent, lv_color_t bg_color, const lv_image_dsc_t *icon_src)
+lv_obj_t *ui_manager_create_screensaver_ex(lv_obj_t *parent, lv_color_t bg_color,
+                                           const lv_image_dsc_t *icon_src, int slot_index)
 {
     if (!parent) return NULL;
 
@@ -434,8 +439,39 @@ lv_obj_t *ui_manager_create_screensaver(lv_obj_t *parent, lv_color_t bg_color, c
     lv_img_set_src(img, icon_src);
     lv_obj_center(img);
 
+    /* Store image handle for hot-swap updates */
+    if (slot_index >= 0 && slot_index < 4) {
+        s_ss_images[slot_index] = img;
+    }
+
     /* Start hidden */
     lv_obj_add_flag(overlay, LV_OBJ_FLAG_HIDDEN);
 
     return overlay;
+}
+
+lv_obj_t *ui_manager_create_screensaver(lv_obj_t *parent, lv_color_t bg_color, const lv_image_dsc_t *icon_src)
+{
+    /* Legacy wrapper - doesn't store image handle */
+    return ui_manager_create_screensaver_ex(parent, bg_color, icon_src, -1);
+}
+
+/* =============================================================================
+ * SCREENSAVER IMAGE HOT-SWAP (Thread-Safe Refresh)
+ *
+ * This callback is called by ss_process_updates() when an image has been
+ * reloaded. It updates the LVGL image widget with the new source pointer.
+ * ========================================================================== */
+
+void ui_manager_on_image_reload(int slot, const lv_image_dsc_t *new_dsc)
+{
+    if (slot < 0 || slot >= 4 || !new_dsc) return;
+
+    lv_obj_t *img = s_ss_images[slot];
+    if (img) {
+        lv_img_set_src(img, new_dsc);
+        ESP_LOGI(TAG, "Screensaver slot %d image source refreshed", slot);
+    } else {
+        ESP_LOGW(TAG, "Screensaver slot %d image handle not found", slot);
+    }
 }

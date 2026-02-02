@@ -15,8 +15,8 @@
 #include "core/system_types.h"
 
 /* Configuration */
-#define USB_LINE_BUFFER_SIZE    2048    /* Max line length (larger for IMG_DATA chunks) */
-#define USB_RX_BUFFER_SIZE      2048
+#define USB_LINE_BUFFER_SIZE    4096    /* Max line length (larger for IMG_DATA chunks) */
+#define USB_RX_BUFFER_SIZE      4096    /* Must be >= max line length to prevent data loss */
 #define USB_TX_BUFFER_SIZE      1024
 
 /* Command handler callback type */

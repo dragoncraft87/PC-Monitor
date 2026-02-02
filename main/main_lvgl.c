@@ -144,6 +144,10 @@ static void display_update_task(void *arg)
         /* Acquire LVGL mutex with timeout - NEVER use portMAX_DELAY! */
         if (xSemaphoreTake(s_lvgl_mutex, pdMS_TO_TICKS(LVGL_MUTEX_TIMEOUT_MS)) == pdTRUE) {
 
+            /* Process pending image reloads from USB task (Thread-Safety Fix)
+             * This MUST be done in the UI thread to avoid race conditions */
+            ss_process_updates();
+
             /* Screensaver logic */
             if (should_screensave && !ui_manager_is_screensaver_active()) {
                 ui_manager_set_screensaver_active(true);
@@ -313,8 +317,8 @@ void app_main(void)
             lv_label_set_text(s_screens.cpu->label_title, hw_id->cpu_name);
         }
         s_dots.cpu = ui_manager_create_status_dot(s_screens.cpu->screen);
-        s_screensavers.cpu = ui_manager_create_screensaver(
-            s_screens.cpu->screen, COLOR_SONIC_BG, ss_image_get_dsc(SS_IMG_CPU));
+        s_screensavers.cpu = ui_manager_create_screensaver_ex(
+            s_screens.cpu->screen, COLOR_SONIC_BG, ss_image_get_dsc(SS_IMG_CPU), SS_IMG_CPU);
     }
 
     /* Display 2: GPU */
@@ -326,8 +330,8 @@ void app_main(void)
             lv_label_set_text(s_screens.gpu->label_title, hw_id->gpu_name);
         }
         s_dots.gpu = ui_manager_create_status_dot(s_screens.gpu->screen);
-        s_screensavers.gpu = ui_manager_create_screensaver(
-            s_screens.gpu->screen, COLOR_ART_BG, ss_image_get_dsc(SS_IMG_GPU));
+        s_screensavers.gpu = ui_manager_create_screensaver_ex(
+            s_screens.gpu->screen, COLOR_ART_BG, ss_image_get_dsc(SS_IMG_GPU), SS_IMG_GPU);
     }
 
     /* Display 3: RAM */
@@ -336,8 +340,8 @@ void app_main(void)
     s_screens.ram = screen_ram_create(lvgl_gc9a01_get_display(&display_ram));
     if (s_screens.ram && s_screens.ram->screen) {
         s_dots.ram = ui_manager_create_status_dot(s_screens.ram->screen);
-        s_screensavers.ram = ui_manager_create_screensaver(
-            s_screens.ram->screen, COLOR_DK_BG, ss_image_get_dsc(SS_IMG_RAM));
+        s_screensavers.ram = ui_manager_create_screensaver_ex(
+            s_screens.ram->screen, COLOR_DK_BG, ss_image_get_dsc(SS_IMG_RAM), SS_IMG_RAM);
     }
 
     /* Display 4: Network */
@@ -346,14 +350,17 @@ void app_main(void)
     s_screens.network = screen_network_create(lvgl_gc9a01_get_display(&display_network));
     if (s_screens.network && s_screens.network->screen) {
         s_dots.net = ui_manager_create_status_dot(s_screens.network->screen);
-        s_screensavers.net = ui_manager_create_screensaver(
-            s_screens.network->screen, COLOR_PACMAN_BG, ss_image_get_dsc(SS_IMG_NET));
+        s_screensavers.net = ui_manager_create_screensaver_ex(
+            s_screens.network->screen, COLOR_PACMAN_BG, ss_image_get_dsc(SS_IMG_NET), SS_IMG_NET);
     }
 
     /* Register UI handles with manager */
     ui_manager_set_screens(&s_screens);
     ui_manager_set_screensavers(&s_screensavers);
     ui_manager_set_status_dots(&s_dots);
+
+    /* Register callback for screensaver image hot-swap (Thread-Safety Fix) */
+    ss_set_reload_callback((ss_image_reload_cb_t)ui_manager_on_image_reload);
 
     xSemaphoreGive(s_lvgl_mutex);
     ESP_LOGI(TAG, "All displays initialized");

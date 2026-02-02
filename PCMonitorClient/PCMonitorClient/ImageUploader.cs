@@ -37,14 +37,14 @@ namespace PCMonitorClient
     /// Protocol:
     /// 1. Client sends: IMG_BEGIN:[Slot]:[Size]
     /// 2. ESP responds:  IMG_OK:BEGIN
-    /// 3. Client sends: IMG_DATA:[Offset]:[HexData] (1024 byte chunks)
+    /// 3. Client sends: IMG_DATA:[Offset]:[HexData] (512 byte chunks)
     /// 4. ESP responds:  IMG_OK:DATA after each chunk
     /// 5. Client sends: IMG_END:[CRC32]
     /// 6. ESP responds:  IMG_OK:END or IMG_ERR:CRC
     /// </summary>
     public class ImageUploader
     {
-        private const int CHUNK_SIZE = 1024;        // Bytes per chunk
+        private const int CHUNK_SIZE = 512;         // Bytes per chunk (512 = 1024 hex chars + ~20 overhead)
         private const int RESPONSE_TIMEOUT_MS = 5000;  // Max wait for ESP response
         private const int MAX_RETRIES = 3;          // Retries per chunk
 
@@ -136,11 +136,17 @@ namespace PCMonitorClient
 
                     string dataCmd = $"IMG_DATA:{bytesSent}:{hexData}\n";
 
+                    // Log every 20th chunk or last chunk for progress visibility
+                    if (chunksSent % 20 == 0 || bytesSent + chunkSize >= totalBytes)
+                    {
+                        Log($"TX Chunk {chunksSent + 1}/{totalChunks}: offset={bytesSent}, size={chunkSize}");
+                    }
+
                     bool chunkSuccess = false;
                     for (int retry = 0; retry < MAX_RETRIES && !chunkSuccess; retry++)
                     {
                         if (retry > 0)
-                            Log($"Retrying chunk at offset {bytesSent} (attempt {retry + 1})");
+                            Log($"Retrying chunk at offset {bytesSent} (attempt {retry + 1}/{MAX_RETRIES})");
 
                         if (await SendAndWaitForResponseAsync(dataCmd, "IMG_OK:DATA", ct))
                         {
@@ -148,13 +154,14 @@ namespace PCMonitorClient
                         }
                         else
                         {
+                            Log($"No ACK for chunk at offset {bytesSent}, will retry...");
                             await Task.Delay(100, ct);
                         }
                     }
 
                     if (!chunkSuccess)
                     {
-                        Log($"Error: Chunk at offset {bytesSent} failed after {MAX_RETRIES} retries");
+                        Log($"FATAL: Chunk at offset {bytesSent} failed after {MAX_RETRIES} retries - aborting upload");
                         SendAbort();
                         return false;
                     }
@@ -163,13 +170,17 @@ namespace PCMonitorClient
                     chunksSent++;
 
                     ReportProgress(bytesSent, totalBytes, chunksSent, totalChunks, "Uploading...");
+
+                    // Small delay to let ESP process (prevents buffer overrun)
+                    await Task.Delay(5, ct);
                 }
 
                 // --- Phase 3: IMG_END ---
                 string endCmd = $"IMG_END:{crc32:X8}\n";
                 Log("TX: " + endCmd.Trim());
 
-                if (!await SendAndWaitForResponseAsync(endCmd, "IMG_OK:END", ct))
+                // ESP32 responds with either IMG_OK:END or IMG_OK:COMPLETE:N
+                if (!await SendAndWaitForResponseAsync(endCmd, new[] { "IMG_OK:END", "IMG_OK:COMPLETE" }, ct))
                 {
                     // Check for CRC error
                     Log("Error: IMG_END not acknowledged (possible CRC mismatch)");
@@ -199,6 +210,14 @@ namespace PCMonitorClient
         /// </summary>
         private async Task<bool> SendAndWaitForResponseAsync(string command, string expectedResponse, CancellationToken ct)
         {
+            return await SendAndWaitForResponseAsync(command, new[] { expectedResponse }, ct);
+        }
+
+        /// <summary>
+        /// Sends command and waits for any of the expected responses.
+        /// </summary>
+        private async Task<bool> SendAndWaitForResponseAsync(string command, string[] expectedResponses, CancellationToken ct)
+        {
             try
             {
                 _port.DiscardInBuffer();
@@ -208,6 +227,7 @@ namespace PCMonitorClient
                 // Wait for response with timeout
                 DateTime timeout = DateTime.Now.AddMilliseconds(RESPONSE_TIMEOUT_MS);
                 StringBuilder lineBuffer = new StringBuilder();
+                int waitLoops = 0;
 
                 while (DateTime.Now < timeout)
                 {
@@ -221,14 +241,26 @@ namespace PCMonitorClient
                             if (lineBuffer.Length > 0)
                             {
                                 string response = lineBuffer.ToString();
-                                if (response.Contains(expectedResponse))
+
+                                // Check if response matches any expected response
+                                foreach (string expected in expectedResponses)
                                 {
-                                    return true;
+                                    if (response.Contains(expected))
+                                    {
+                                        Log($"RX: {response} (matched: {expected})");
+                                        return true;
+                                    }
                                 }
-                                else if (response.Contains("IMG_ERR"))
+
+                                if (response.Contains("IMG_ERR"))
                                 {
                                     Log("ESP Error: " + response);
                                     return false;
+                                }
+                                else
+                                {
+                                    // Log unexpected responses for debugging
+                                    Log($"RX (ignored): {response}");
                                 }
                                 lineBuffer.Clear();
                             }
@@ -241,10 +273,25 @@ namespace PCMonitorClient
                     else
                     {
                         await Task.Delay(10, ct);
+                        waitLoops++;
+
+                        // Log every second of waiting
+                        if (waitLoops % 100 == 0)
+                        {
+                            Log($"Waiting for response... ({waitLoops * 10}ms elapsed)");
+                        }
                     }
                 }
 
-                Log("Timeout waiting for: " + expectedResponse);
+                // Log what was in the buffer when timeout occurred
+                if (lineBuffer.Length > 0)
+                {
+                    Log($"Timeout with partial data in buffer: '{lineBuffer}'");
+                }
+                else
+                {
+                    Log($"Timeout waiting for: {string.Join(" or ", expectedResponses)} (no data received)");
+                }
                 return false;
             }
             catch (Exception ex)
@@ -294,6 +341,10 @@ namespace PCMonitorClient
 
         private void Log(string message)
         {
+            // Debug to console as fallback
+            Console.WriteLine($"[ImageUploader] {message}");
+            System.Diagnostics.Debug.WriteLine($"[ImageUploader] {message}");
+
             LogMessage?.Invoke(this, message);
         }
     }
