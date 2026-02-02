@@ -114,11 +114,11 @@ namespace PCMonitorClient
             AutoScaleDimensions = new SizeF(96F, 96F);
 
             Text = "Scarab Monitor - Device Manager";
-            Size = new Size(900, 860);  // Increased height for fixed log panel
+            Size = new Size(900, 1000);  // Increased height for fixed log panel
             StartPosition = FormStartPosition.CenterScreen;
             FormBorderStyle = FormBorderStyle.Sizable;
             MaximizeBox = false;
-            MinimumSize = new Size(900, 860);
+            MinimumSize = new Size(900, 1000);
             BackColor = ThemeBgDark;
             ForeColor = ThemeTextPrimary;
             Font = new Font("Segoe UI", 9F);
@@ -133,7 +133,7 @@ namespace PCMonitorClient
             _tabControl = new TabControl
             {
                 Location = new Point(10, 310),
-                Size = new Size(865, 325),
+                Size = new Size(865, 460),
                 DrawMode = TabDrawMode.OwnerDrawFixed,
                 ItemSize = new Size(120, 30)
             };
@@ -1011,16 +1011,16 @@ namespace PCMonitorClient
             y += 28;
 
             // Default colors from ESP32 gui_settings.h
-            _panelSsBgCpu = AddScreensaverColorRow(_tabColors, "CPU (Sonic):", rightCol, y, labelWidth, panelSize,
+            _panelSsBgCpu = AddScreensaverColorRow(_tabColors, "CPU:", rightCol, y, labelWidth, panelSize,
                 Color.FromArgb(0x00, 0x00, 0x8B), 0);  // Dark Blue
             y += spacing;
-            _panelSsBgGpu = AddScreensaverColorRow(_tabColors, "GPU (Triforce):", rightCol, y, labelWidth, panelSize,
+            _panelSsBgGpu = AddScreensaverColorRow(_tabColors, "GPU:", rightCol, y, labelWidth, panelSize,
                 Color.FromArgb(0x8B, 0x00, 0x00), 1);  // Dark Red
             y += spacing;
-            _panelSsBgRam = AddScreensaverColorRow(_tabColors, "RAM (DK):", rightCol, y, labelWidth, panelSize,
+            _panelSsBgRam = AddScreensaverColorRow(_tabColors, "RAM:", rightCol, y, labelWidth, panelSize,
                 Color.FromArgb(0x5D, 0x40, 0x37), 2);  // Dark Brown
             y += spacing;
-            _panelSsBgNet = AddScreensaverColorRow(_tabColors, "NET (PacMan):", rightCol, y, labelWidth, panelSize,
+            _panelSsBgNet = AddScreensaverColorRow(_tabColors, "NET:", rightCol, y, labelWidth, panelSize,
                 Color.Black, 3);  // Black
         }
 
