@@ -172,4 +172,24 @@ bool gui_settings_save(void);
  */
 void gui_apply_theme(void);
 
+/**
+ * @brief Handle SET_SS_BG command for screensaver background colors
+ * @param line Command line (e.g., "SET_SS_BG=0,FF0000")
+ * @return true if command was handled
+ *
+ * Format: SET_SS_BG=<slot>,<hexcode>
+ * - slot: 0-3 (CPU, GPU, RAM, NET)
+ * - hexcode: RGB color without # (e.g., FF0000 for red)
+ */
+bool gui_settings_handle_command(const char *line);
+
+/**
+ * @brief Set callback for theme updates (called after settings change)
+ * @param callback Function to call when theme needs refresh
+ *
+ * This allows gui_settings to trigger UI updates without direct dependency
+ * on ui_manager. The callback should acquire LVGL mutex and apply theme.
+ */
+void gui_settings_set_theme_callback(void (*callback)(void));
+
 #endif /* GUI_SETTINGS_H */

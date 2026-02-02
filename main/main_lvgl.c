@@ -121,6 +121,23 @@ static const lvgl_gc9a01_config_t config_net = {
 #define COLOR_PACMAN_BG     lv_color_hex(gui_settings.ss_bg_color[SCREEN_NET])
 
 /* =============================================================================
+ * THEME UPDATE CALLBACK (Thread-Safe)
+ *
+ * Called by gui_settings when SET_SS_BG command is received.
+ * Acquires LVGL mutex and applies theme changes.
+ * ========================================================================== */
+static void theme_update_callback(void)
+{
+    if (s_lvgl_mutex && xSemaphoreTake(s_lvgl_mutex, pdMS_TO_TICKS(LVGL_MUTEX_TIMEOUT_MS)) == pdTRUE) {
+        ui_manager_apply_theme();
+        xSemaphoreGive(s_lvgl_mutex);
+        ESP_LOGI(TAG, "Theme updated via SET_SS_BG command");
+    } else {
+        ESP_LOGW(TAG, "Failed to acquire LVGL mutex for theme update");
+    }
+}
+
+/* =============================================================================
  * TASK: Display Update - 10 FPS with Screensaver Logic
  * ========================================================================== */
 static void display_update_task(void *arg)
@@ -276,6 +293,10 @@ void app_main(void)
     usb_serial_register_handler(hw_identity_handle_command);
     usb_serial_register_handler(ui_manager_handle_color_command);
     usb_serial_register_handler(ss_image_handle_command);
+    usb_serial_register_handler(gui_settings_handle_command);
+
+    /* Set theme callback for gui_settings (SET_SS_BG command) */
+    gui_settings_set_theme_callback(theme_update_callback);
 
     /* Initialize UI manager */
     ui_manager_init(s_lvgl_mutex);

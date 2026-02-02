@@ -155,3 +155,52 @@ bool gui_settings_save(void)
     ESP_LOGI(TAG, "Saved GUI settings to LittleFS (%d bytes)", (int)written);
     return true;
 }
+
+/* =============================================================================
+ * COMMAND HANDLER FOR SET_SS_BG
+ *
+ * Format: SET_SS_BG=<slot>,<hexcode>
+ * Example: SET_SS_BG=0,FF0000 (Sets slot 0 background to red)
+ * ========================================================================== */
+
+/* Forward declaration - will be set by ui_manager */
+static void (*s_theme_apply_callback)(void) = NULL;
+
+void gui_settings_set_theme_callback(void (*callback)(void))
+{
+    s_theme_apply_callback = callback;
+}
+
+bool gui_settings_handle_command(const char *line)
+{
+    /* Format: "SET_SS_BG=<slot>,<hex>" */
+    if (strncmp(line, "SET_SS_BG=", 10) == 0) {
+        int slot;
+        unsigned long hex_val;
+
+        /* Parse: Slot (0-3) and Color (Hex e.g. FF0000) */
+        if (sscanf(line + 10, "%d,%lx", &slot, &hex_val) == 2) {
+            if (slot >= 0 && slot < SCREEN_COUNT) {
+                ESP_LOGI(TAG, "Setting SS BG Color for slot %d to 0x%06lX", slot, hex_val);
+
+                /* 1. Set value */
+                gui_settings.ss_bg_color[slot] = (uint32_t)hex_val;
+
+                /* 2. Save to LittleFS */
+                gui_settings_save();
+
+                /* 3. Trigger theme update via callback (thread-safe) */
+                if (s_theme_apply_callback) {
+                    s_theme_apply_callback();
+                }
+
+                return true;
+            } else {
+                ESP_LOGW(TAG, "SET_SS_BG: Invalid slot %d (must be 0-3)", slot);
+            }
+        } else {
+            ESP_LOGW(TAG, "SET_SS_BG: Parse error for '%s'", line + 10);
+        }
+    }
+    return false;
+}

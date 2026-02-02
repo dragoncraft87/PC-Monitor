@@ -75,6 +75,9 @@ namespace PCMonitorClient
         private Panel _panelRamBar, _panelNetDown, _panelNetUp;
         private Panel _panelBgCpu, _panelBgGpu, _panelBgRam, _panelBgNet;
 
+        // Screensaver background color panels
+        private Panel _panelSsBgCpu, _panelSsBgGpu, _panelSsBgRam, _panelSsBgNet;
+
         // Profile system
         private TextBox _txtProfileName;
         private ListBox _lstProfiles;
@@ -1001,6 +1004,24 @@ namespace PCMonitorClient
             _panelBgRam = AddColorRow(_tabColors, "RAM Screen:", rightCol, y, labelWidth, panelSize, Color.Black, "SET_CLR_BG_NORM:2");
             y += spacing;
             _panelBgNet = AddColorRow(_tabColors, "NET Screen:", rightCol, y, labelWidth, panelSize, Color.Black, "SET_CLR_BG_NORM:3");
+            y += spacing + 15;
+
+            // === Screensaver Backgrounds (Desert-Spec Mode) ===
+            AddSectionLabel(_tabColors, "Screensaver Backgrounds", rightCol, y);
+            y += 28;
+
+            // Default colors from ESP32 gui_settings.h
+            _panelSsBgCpu = AddScreensaverColorRow(_tabColors, "CPU (Sonic):", rightCol, y, labelWidth, panelSize,
+                Color.FromArgb(0x00, 0x00, 0x8B), 0);  // Dark Blue
+            y += spacing;
+            _panelSsBgGpu = AddScreensaverColorRow(_tabColors, "GPU (Triforce):", rightCol, y, labelWidth, panelSize,
+                Color.FromArgb(0x8B, 0x00, 0x00), 1);  // Dark Red
+            y += spacing;
+            _panelSsBgRam = AddScreensaverColorRow(_tabColors, "RAM (DK):", rightCol, y, labelWidth, panelSize,
+                Color.FromArgb(0x5D, 0x40, 0x37), 2);  // Dark Brown
+            y += spacing;
+            _panelSsBgNet = AddScreensaverColorRow(_tabColors, "NET (PacMan):", rightCol, y, labelWidth, panelSize,
+                Color.Black, 3);  // Black
         }
 
         private void AddSectionLabel(Control parent, string text, int x, int y)
@@ -1068,6 +1089,73 @@ namespace PCMonitorClient
                     {
                         SendCommandSafe($"{cmd}:{ColorToHex(dlg.Color)}");
                     }
+                }
+            }
+        }
+
+        /// <summary>
+        /// Adds a color row for screensaver background with immediate send on selection.
+        /// Uses SET_SS_BG=slot,hexcode protocol.
+        /// </summary>
+        private Panel AddScreensaverColorRow(Control parent, string label, int x, int y,
+            int labelWidth, int panelSize, Color defaultColor, int slotIndex)
+        {
+            var lbl = new Label
+            {
+                Text = label,
+                Location = new Point(x, y + 6),
+                Size = new Size(labelWidth, 20),
+                ForeColor = ThemeTextSecondary
+            };
+            parent.Controls.Add(lbl);
+
+            var panel = new Panel
+            {
+                Location = new Point(x + labelWidth, y),
+                Size = new Size(panelSize, panelSize),
+                BackColor = defaultColor,
+                Cursor = Cursors.Hand,
+                Tag = slotIndex  // Store slot index for command
+            };
+
+            panel.Paint += (s, e) =>
+            {
+                using (var pen = new Pen(ThemeBorder, 2))
+                {
+                    e.Graphics.DrawRectangle(pen, 0, 0, panel.Width - 1, panel.Height - 1);
+                }
+            };
+            panel.Click += ScreensaverBgPanel_Click;
+            parent.Controls.Add(panel);
+
+            return panel;
+        }
+
+        /// <summary>
+        /// Handles screensaver background color selection.
+        /// Sends SET_SS_BG=slot,hexcode command immediately.
+        /// </summary>
+        private void ScreensaverBgPanel_Click(object sender, EventArgs e)
+        {
+            var panel = sender as Panel;
+            if (panel == null) return;
+
+            int slotIndex = (int)panel.Tag;
+
+            using (var dlg = new ColorDialog())
+            {
+                dlg.Color = panel.BackColor;
+                dlg.FullOpen = true;
+
+                if (dlg.ShowDialog() == DialogResult.OK)
+                {
+                    panel.BackColor = dlg.Color;
+
+                    // Send command immediately: SET_SS_BG=slot,hexcode
+                    string hex = ColorToHex(dlg.Color);
+                    SendCommandSafe($"SET_SS_BG={slotIndex},{hex}");
+
+                    AppendDebugLog($"Sent screensaver BG color for slot {slotIndex}: #{hex}");
                 }
             }
         }
