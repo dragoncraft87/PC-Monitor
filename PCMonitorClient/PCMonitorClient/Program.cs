@@ -81,8 +81,12 @@ namespace PCMonitorClient
         private const string NAME_CMD_GPU = "NAME_GPU=";
         private const string NAME_CMD_HASH = "NAME_HASH=";
 
-        private static readonly string[] SKIP_PORT_KEYWORDS = { "JTAG", "Debug", "Debugger", "JLink", "ST-Link" };
-        private static readonly string[] PREFER_PORT_KEYWORDS = { "USB Serial", "USB-SERIAL", "CP210", "CH340", "CH341", "FTDI", "Silicon Labs" };
+        // NOTE: The ESP32-S3's native USB port enumerates as "USB JTAG/serial
+        // debug unit" when the Espressif driver is installed - and that IS our
+        // device. So keywords here only LOWER scan priority (tried last),
+        // they never exclude a port. The handshake decides.
+        private static readonly string[] DEPRIORITIZE_PORT_KEYWORDS = { "Debugger", "JLink", "ST-Link" };
+        private static readonly string[] PREFER_PORT_KEYWORDS = { "USB Serial", "USB-SERIAL", "USB JTAG/serial", "CP210", "CH340", "CH341", "FTDI", "Silicon Labs" };
 
         private readonly NotifyIcon _trayIcon;
         private readonly StatusForm _statusForm;
@@ -114,6 +118,8 @@ namespace PCMonitorClient
         private volatile bool _isLiteMode = false;
         private volatile bool _isUploadMode = false;  // Pauses data loop during image upload
         private volatile bool _isPaused = false;      // Manual pause by user
+        private volatile string _espFwVersion = "";   // Firmware version from handshake (|V:x.y.z)
+        private volatile string _espDeviceName = "";  // User-assigned device name from handshake (|N:...)
 
         public TrayContext(string[] args)
         {
@@ -141,6 +147,7 @@ namespace PCMonitorClient
                 SendCommand = SendCommandToEsp,
                 IsConnected = () => _isConnected,
                 GetSerialPort = () => _activePort,
+                GetPortWriteLock = () => _portLock,
                 SetUploadMode = (mode) => _isUploadMode = mode,
                 SetPaused = (paused) => _isPaused = paused,
                 IsPaused = () => _isPaused,
@@ -213,6 +220,30 @@ namespace PCMonitorClient
             return SystemIcons.Application;
         }
 
+        [System.Runtime.InteropServices.DllImport("user32.dll", SetLastError = true)]
+        private static extern bool DestroyIcon(IntPtr handle);
+
+        /// <summary>
+        /// Wraps a GetHicon() handle into a managed Icon without leaking the
+        /// GDI handle (Icon.FromHandle does not own the handle - it must be
+        /// cloned and the original destroyed).
+        /// </summary>
+        private static Icon IconFromBitmap(Bitmap bmp)
+        {
+            IntPtr hIcon = bmp.GetHicon();
+            try
+            {
+                using (Icon temp = Icon.FromHandle(hIcon))
+                {
+                    return (Icon)temp.Clone();
+                }
+            }
+            finally
+            {
+                DestroyIcon(hIcon);
+            }
+        }
+
         /// <summary>
         /// Creates a copy of the icon (for base state without overlay)
         /// </summary>
@@ -225,7 +256,7 @@ namespace PCMonitorClient
                     g.Clear(Color.Transparent);
                     g.DrawIcon(source, new Rectangle(0, 0, 16, 16));
                 }
-                return Icon.FromHandle(bmp.GetHicon());
+                return IconFromBitmap(bmp);
             }
         }
 
@@ -273,7 +304,7 @@ namespace PCMonitorClient
                     }
                 }
 
-                return Icon.FromHandle(bmp.GetHicon());
+                return IconFromBitmap(bmp);
             }
         }
 
@@ -455,7 +486,13 @@ namespace PCMonitorClient
         {
             try
             {
-                _settingsForm.SetConnectionStatus(connected, portName, _collector?.IdentityHash ?? "");
+                // Prefer the device-stored name (SET_ID) over the bare port name
+                string displayName = (connected && !string.IsNullOrEmpty(_espDeviceName))
+                    ? _espDeviceName + " (" + portName + ")"
+                    : portName;
+
+                _settingsForm.SetConnectionStatus(connected, displayName, _collector?.IdentityHash ?? "",
+                    connected ? _espFwVersion : "");
             }
             catch { }
         }
@@ -686,8 +723,15 @@ namespace PCMonitorClient
                         netType, netSpeed,
                         s.NetDown, s.NetUp);
 
-                    port.Write(data);
-                    port.BaseStream.Flush();
+                    // All port writes go through _portLock: the data loop, user
+                    // commands (SendCommandToEsp) and image/firmware uploads run
+                    // on different threads - unsynchronized writes interleave
+                    // bytes and corrupt protocol lines on the ESP.
+                    lock (_portLock)
+                    {
+                        port.Write(data);
+                        port.BaseStream.Flush();
+                    }
 
                     // Update status form (only if visible, handled internally)
                     _statusForm.UpdateData("TX: " + data.Trim());
@@ -714,8 +758,24 @@ namespace PCMonitorClient
         // ====================================================================
 
         /// <summary>
+        /// Extracts the value of a |KEY: field from the handshake response
+        /// (value runs until the next '|' or end of line). Returns "" if absent.
+        /// </summary>
+        private static string ParseHandshakeField(string response, string key)
+        {
+            int pos = response.IndexOf(key, StringComparison.Ordinal);
+            if (pos < 0) return "";
+
+            string value = response.Substring(pos + key.Length).Trim();
+            int nextSep = value.IndexOf('|');
+            if (nextSep >= 0) value = value.Substring(0, nextSep);
+            return value.Trim();
+        }
+
+        /// <summary>
         /// Verifies handshake and returns ESP's identity hash (or null on failure).
-        /// Response format: SCARAB_CLIENT_OK|H:XXXXXXXX
+        /// Response format: SCARAB_CLIENT_OK|H:XXXXXXXX|V:x.y.z|N:device-name
+        /// (|V: and |N: added in FW 2.4 - absent on older firmware)
         /// </summary>
         private string VerifyHandshakeAndGetHash(SerialPort port)
         {
@@ -733,6 +793,10 @@ namespace PCMonitorClient
                     string response = port.ReadLine();
                     if (response != null && response.Contains(HANDSHAKE_RESPONSE))
                     {
+                        // Optional fields (FW >= 2.4)
+                        _espFwVersion = ParseHandshakeField(response, "|V:");
+                        _espDeviceName = ParseHandshakeField(response, "|N:");
+
                         // Parse hash: SCARAB_CLIENT_OK|H:XXXXXXXX
                         int hashPos = response.IndexOf("|H:");
                         if (hashPos >= 0 && response.Length >= hashPos + 11)
@@ -813,13 +877,8 @@ namespace PCMonitorClient
             foreach (var portInfo in ports)
             {
                 if (ct.IsCancellationRequested) return null;
-                if (portInfo.ShouldSkip)
-                {
-                    _statusForm.AppendLog("  " + portInfo.Name + ": SKIP (JTAG)");
-                    continue;
-                }
 
-                _statusForm.AppendLog("  " + portInfo.Name + ": Trying...");
+                _statusForm.AppendLog("  " + portInfo.Name + ": Trying..." + (portInfo.IsDeprioritized ? " (low priority)" : ""));
 
                 try
                 {
@@ -855,7 +914,7 @@ namespace PCMonitorClient
         {
             public string Name;
             public string Caption;
-            public bool ShouldSkip;
+            public bool IsDeprioritized;
             public bool IsPreferred;
         }
 
@@ -888,7 +947,7 @@ namespace PCMonitorClient
                                     {
                                         Name = portName,
                                         Caption = caption,
-                                        ShouldSkip = SKIP_PORT_KEYWORDS.Any(k => caption.IndexOf(k, StringComparison.OrdinalIgnoreCase) >= 0),
+                                        IsDeprioritized = DEPRIORITIZE_PORT_KEYWORDS.Any(k => caption.IndexOf(k, StringComparison.OrdinalIgnoreCase) >= 0),
                                         IsPreferred = PREFER_PORT_KEYWORDS.Any(k => caption.IndexOf(k, StringComparison.OrdinalIgnoreCase) >= 0)
                                     });
                                     systemPorts.Remove(portName);
@@ -902,7 +961,7 @@ namespace PCMonitorClient
                 // Add remaining (unknown) ports
                 foreach (var port in systemPorts)
                 {
-                    result.Add(new PortInfo { Name = port, Caption = port, ShouldSkip = false, IsPreferred = false });
+                    result.Add(new PortInfo { Name = port, Caption = port, IsDeprioritized = false, IsPreferred = false });
                 }
             }
             catch
@@ -910,16 +969,15 @@ namespace PCMonitorClient
                 // Fallback
                 foreach (var port in SerialPort.GetPortNames())
                 {
-                    result.Add(new PortInfo { Name = port, Caption = port, ShouldSkip = false, IsPreferred = false });
+                    result.Add(new PortInfo { Name = port, Caption = port, IsDeprioritized = false, IsPreferred = false });
                 }
             }
 
-            // Sort: preferred first, then by name descending
+            // Sort: preferred first, deprioritized (debugger) ports last
             return result
-                .Where(p => !p.ShouldSkip)
-                .OrderByDescending(p => p.IsPreferred)
+                .OrderBy(p => p.IsDeprioritized ? 1 : 0)
+                .ThenByDescending(p => p.IsPreferred)
                 .ThenByDescending(p => p.Name)
-                .Concat(result.Where(p => p.ShouldSkip))
                 .ToList();
         }
     }

@@ -15,11 +15,14 @@ static const char *TAG = "HW-IDENTITY";
 static hw_identity_t s_hw_identity = {
     .cpu_name = "CPU",
     .gpu_name = "GPU",
-    .identity_hash = "00000000"
+    .identity_hash = "00000000",
+    .device_name = ""
 };
 
-/* Callback for UI update (set by ui_manager) */
-static void (*s_ui_update_callback)(void) = NULL;
+/* Set by the USB task when names changed; consumed by the UI thread
+ * (display_update_task) which applies the labels under the LVGL mutex.
+ * Direct lv_label_set_text from the USB task would race with rendering. */
+static volatile bool s_names_dirty = false;
 
 hw_identity_t *hw_identity_get(void)
 {
@@ -49,6 +52,11 @@ void hw_identity_load(void)
                 strncpy(s_hw_identity.gpu_name, line + 9, sizeof(s_hw_identity.gpu_name) - 1);
                 s_hw_identity.gpu_name[sizeof(s_hw_identity.gpu_name) - 1] = '\0';
                 ESP_LOGI(TAG, "Loaded GPU name: %s", s_hw_identity.gpu_name);
+            }
+            else if (strncmp(line, "DEVICE_NAME=", 12) == 0) {
+                strncpy(s_hw_identity.device_name, line + 12, sizeof(s_hw_identity.device_name) - 1);
+                s_hw_identity.device_name[sizeof(s_hw_identity.device_name) - 1] = '\0';
+                ESP_LOGI(TAG, "Loaded device name: %s", s_hw_identity.device_name);
             }
         }
         fclose(f);
@@ -82,6 +90,9 @@ void hw_identity_save(void)
     if (f != NULL) {
         fprintf(f, "CPU_NAME=%s\n", s_hw_identity.cpu_name);
         fprintf(f, "GPU_NAME=%s\n", s_hw_identity.gpu_name);
+        if (s_hw_identity.device_name[0] != '\0') {
+            fprintf(f, "DEVICE_NAME=%s\n", s_hw_identity.device_name);
+        }
         fclose(f);
         ESP_LOGI(TAG, "Saved names to LittleFS");
     } else {
@@ -123,10 +134,27 @@ void hw_identity_set_hash(const char *hash)
     }
 }
 
-/* Register UI update callback */
-void hw_identity_set_ui_callback(void (*callback)(void))
+void hw_identity_set_device_name(const char *name)
 {
-    s_ui_update_callback = callback;
+    if (!name) return;
+
+    /* Copy, skipping '|' (handshake field delimiter) */
+    size_t j = 0;
+    for (size_t i = 0; name[i] != '\0' && j < sizeof(s_hw_identity.device_name) - 1; i++) {
+        if (name[i] != '|') {
+            s_hw_identity.device_name[j++] = name[i];
+        }
+    }
+    s_hw_identity.device_name[j] = '\0';
+}
+
+bool hw_identity_consume_names_dirty(void)
+{
+    if (s_names_dirty) {
+        s_names_dirty = false;
+        return true;
+    }
+    return false;
 }
 
 bool hw_identity_handle_command(const char *line)
@@ -154,6 +182,12 @@ bool hw_identity_handle_command(const char *line)
         ESP_LOGI(TAG, "Received identity hash: %s", s_hw_identity.identity_hash);
         needs_save = true;
     }
+    /* SET_ID:<device_name> - user-assigned name, reported in handshake |N: */
+    else if (strncmp(line, "SET_ID:", 7) == 0) {
+        hw_identity_set_device_name(line + 7);
+        ESP_LOGI(TAG, "Received device name: %s", s_hw_identity.device_name);
+        needs_save = true;
+    }
     else {
         return false;  /* Not a NAME command */
     }
@@ -162,8 +196,8 @@ bool hw_identity_handle_command(const char *line)
         hw_identity_save();
     }
 
-    if (needs_ui_update && s_ui_update_callback) {
-        s_ui_update_callback();
+    if (needs_ui_update) {
+        s_names_dirty = true;  /* UI thread picks this up via hw_identity_consume_names_dirty() */
     }
 
     return true;

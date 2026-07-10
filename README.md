@@ -62,10 +62,10 @@ This isn't marketing—it's engineering philosophy. Every feature exists because
 
 ```
 PC  → ESP32:  WHO_ARE_YOU?
-ESP32 → PC:   SCARAB_CLIENT_OK
+ESP32 → PC:   SCARAB_CLIENT_OK|H:<identity-hash>|V:<fw-version>
 ```
 
-The client scans all COM ports, sends `WHO_ARE_YOU?`, and waits for the correct response. No manual port configuration required.
+The client scans all COM ports, sends `WHO_ARE_YOU?`, and waits for the correct response. No manual port configuration required. The `|V:` field (firmware version) was added in v2.4; the client tolerates its absence on older firmware.
 
 ### Data Format
 
@@ -82,6 +82,23 @@ CPU:45,CPUT:62.5,GPU:30,GPUT:55.0,VRAM:4.2/12.0,RAM:16.5/32.0,NET:LAN,SPEED:1000
 
 **Special Values:**
 - `-1` = Sensor unavailable (displays "N/A" on screen)
+
+### Firmware Update over USB (v2.4+)
+
+Firmware can be updated directly from the companion app (**Settings → Firmware** tab) — no cable re-flash, no collecting devices. The app pushes the `.bin` from `idf.py build` over the serial link:
+
+```
+PC  → ESP32:  FW_BEGIN:<size>
+ESP32 → PC:   FW_OK:BEGIN
+PC  → ESP32:  FW_DATA:<offset>:<hex>          (1024-byte chunks)
+ESP32 → PC:   FW_OK:DATA:<received>            or FW_ERR:OFFSET:<expected> (client resyncs)
+PC  → ESP32:  FW_END:<crc32>
+ESP32 → PC:   FW_OK:COMPLETE                   → device verifies, switches OTA slot, reboots
+```
+
+The image is written to the inactive OTA slot and validated (CRC32 + ESP-IDF image check) **before** the boot partition is switched — a failed or interrupted transfer leaves the running firmware untouched. The same chunked protocol (with `IMG_` prefix) is used for screensaver image uploads.
+
+> **One-time migration:** Devices flashed before v2.4 use a factory-only partition table and need **one final cable flash** (`idf.py flash`) to get the OTA layout. This also relocates the storage partition, so uploaded images/colors must be re-provisioned once via the app. All subsequent updates work over USB serial.
 
 ---
 

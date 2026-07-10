@@ -6,7 +6,11 @@ $ScriptPath = $PSScriptRoot
 $ProjectPath = Join-Path $ScriptPath "PCMonitorClient"
 $DistPath = Join-Path $ScriptPath "Dist"
 $Timestamp = Get-Date -Format "yyyy-MM-dd_HH-mm"
-$ZipName = "Scarab_Monitor_v2.3_$Timestamp.zip"
+$Version = "v2.4"
+$ZipName = "Scarab_Monitor_${Version}_$Timestamp.zip"
+# ESP32-Firmware-Image (idf.py build) - wird als firmware\ ins Paket gelegt,
+# damit Geraete direkt aus der App heraus geflasht werden koennen
+$FirmwareBin = Join-Path (Split-Path $ScriptPath -Parent) "build\pc-monitor-poc.bin"
 
 Write-Host ">>> [1/5] Initialisiere Build-Umgebung..." -ForegroundColor Cyan
 # Alte Builds bereinigen
@@ -34,11 +38,29 @@ foreach ($file in $CriticalFiles) {
     }
 }
 
+# ESP32-Firmware beilegen (falls gebaut)
+if (Test-Path $FirmwareBin) {
+    New-Item -ItemType Directory -Path "$DistPath\Scarab_Monitor\firmware" | Out-Null
+    Copy-Item $FirmwareBin "$DistPath\Scarab_Monitor\firmware\scarab_firmware_$Version.bin"
+    Write-Host "    ESP32-Firmware beigelegt: firmware\scarab_firmware_$Version.bin" -ForegroundColor Green
+} else {
+    Write-Warning "ESP32-Firmware nicht gefunden ($FirmwareBin) - Paket ohne firmware\ erstellt. Vorher 'idf.py build' ausfuehren!"
+}
+
 Write-Host ">>> [4/5] Erstelle README..." -ForegroundColor Cyan
 $ReadmeContent = @"
 SCARAB MONITOR - DESERT SPEC EDITION
-Version: v2.3 (Build $Timestamp)
+Version: $Version (Build $Timestamp)
 ------------------------------------
+
+NEUERUNGEN v2.4:
+- Firmware-Update direkt aus der App (Settings -> Firmware-Tab)
+  Kein Kabel-Flashen mehr noetig - Image liegt unter firmware\ bei.
+  ACHTUNG: Geraete mit Firmware < 2.4 brauchen EINMALIG ein Kabel-Update
+  (neue OTA-Partitionstabelle, siehe Projekt-README).
+- Uploads ueberleben verlorene ACKs (automatischer Resync)
+- LittleFS-Daten (Bilder/Farben) ueberleben Firmware-Updates
+- Hardware-Namen erscheinen sofort ohne Geraete-Neustart
 
 NEUERUNGEN v2.3:
 - Dynamische Screensaver-Hintergrundfarben pro Slot

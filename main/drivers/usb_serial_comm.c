@@ -14,6 +14,7 @@
 #include "esp_log.h"
 #include "esp_timer.h"
 #include "esp_task_wdt.h"
+#include "esp_app_desc.h"
 
 static const char *TAG = "USB-COMM";
 
@@ -134,15 +135,20 @@ static void parse_pc_data(const char *line)
             fields_parsed++;
         }
         else if (strncmp(token, "VRAM:", 5) == 0) {
-            sscanf(token + 5, "%f/%f", &temp_stats.gpu_vram_used, &temp_stats.gpu_vram_total);
-            fields_parsed++;
+            if (sscanf(token + 5, "%f/%f", &temp_stats.gpu_vram_used, &temp_stats.gpu_vram_total) == 2) {
+                fields_parsed++;
+            } else {
+                temp_stats.gpu_vram_used = -1.0f;   /* N/A - do not invent values */
+                temp_stats.gpu_vram_total = -1.0f;
+            }
         }
         else if (strncmp(token, "RAM:", 4) == 0) {
-            sscanf(token + 4, "%f/%f", &temp_stats.ram_used_gb, &temp_stats.ram_total_gb);
-            if (temp_stats.ram_total_gb < 0.1f) {
-                temp_stats.ram_total_gb = 16.0f;
+            if (sscanf(token + 4, "%f/%f", &temp_stats.ram_used_gb, &temp_stats.ram_total_gb) == 2) {
+                fields_parsed++;
+            } else {
+                temp_stats.ram_used_gb = -1.0f;     /* N/A - do not invent values */
+                temp_stats.ram_total_gb = -1.0f;
             }
-            fields_parsed++;
         }
         else if (strncmp(token, "NET:", 4) == 0) {
             strncpy(temp_stats.net_type, token + 4, sizeof(temp_stats.net_type) - 1);
@@ -193,8 +199,12 @@ static bool handle_handshake(const char *line)
 {
     if (strcmp(line, "WHO_ARE_YOU?") == 0) {
         hw_identity_t *id = hw_identity_get();
-        char response[64];
-        snprintf(response, sizeof(response), "SCARAB_CLIENT_OK|H:%s\n", id->identity_hash);
+        const esp_app_desc_t *app = esp_app_get_description();
+        char response[128];
+        /* |V:<version> and |N:<device name> appended in v2.4 -
+         * client tolerates their absence (old FW). |N: may be empty. */
+        snprintf(response, sizeof(response), "SCARAB_CLIENT_OK|H:%s|V:%s|N:%s\n",
+                 id->identity_hash, app->version, id->device_name);
         usb_serial_send(response);
         ESP_LOGI(TAG, "Handshake: WHO_ARE_YOU? -> %s", response);
         return true;

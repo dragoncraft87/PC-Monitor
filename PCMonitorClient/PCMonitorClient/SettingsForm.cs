@@ -34,6 +34,7 @@ namespace PCMonitorClient
         public Action<string> SendCommand { get; set; }
         public Func<bool> IsConnected { get; set; }
         public Func<System.IO.Ports.SerialPort> GetSerialPort { get; set; }
+        public Func<object> GetPortWriteLock { get; set; }
         public Action<bool> SetUploadMode { get; set; }
         public Action<bool> SetPaused { get; set; }
         public Func<bool> IsPaused { get; set; }
@@ -48,6 +49,17 @@ namespace PCMonitorClient
         private TabPage _tabDashboard;
         private TabPage _tabColors;
         private TabPage _tabProfiles;
+        private TabPage _tabFirmware;
+
+        // Firmware update tab controls
+        private Label _lblFwCurrentVersion;
+        private TextBox _txtFwPath;
+        private Button _btnFwBrowse;
+        private Button _btnFwFlash;
+        private ProgressBar _progressFw;
+        private Label _lblFwStatus;
+        private string _espFwVersion = "";
+        private bool _isFlashingFirmware;
 
         // Device status bar
         private Panel _panelDeviceStatus;
@@ -162,6 +174,14 @@ namespace PCMonitorClient
             };
             CreateProfilesTab();
             _tabControl.TabPages.Add(_tabProfiles);
+
+            // === Firmware Tab ===
+            _tabFirmware = new TabPage("Firmware")
+            {
+                BackColor = ThemeBgMedium
+            };
+            CreateFirmwareTab();
+            _tabControl.TabPages.Add(_tabFirmware);
 
             Controls.Add(_tabControl);
 
@@ -444,7 +464,8 @@ namespace PCMonitorClient
 
         private void SetDeviceName()
         {
-            string newName = _txtDeviceName.Text.Trim();
+            // '|' is the handshake field delimiter - firmware strips it too
+            string newName = _txtDeviceName.Text.Replace("|", "").Trim();
             if (string.IsNullOrEmpty(newName))
             {
                 MessageBox.Show("Please enter a device name.", "Invalid Name",
@@ -478,16 +499,26 @@ namespace PCMonitorClient
             }
         }
 
-        public void SetConnectionStatus(bool connected, string deviceName = "", string deviceId = "")
+        public void SetConnectionStatus(bool connected, string deviceName = "", string deviceId = "", string fwVersion = "")
         {
             if (InvokeRequired)
             {
-                BeginInvoke((MethodInvoker)delegate { SetConnectionStatus(connected, deviceName, deviceId); });
+                BeginInvoke((MethodInvoker)delegate { SetConnectionStatus(connected, deviceName, deviceId, fwVersion); });
                 return;
             }
 
             _connectedDeviceName = deviceName;
             _connectedDeviceId = deviceId;
+            _espFwVersion = connected ? fwVersion : "";
+
+            // Firmware tab reflects connection state
+            if (_lblFwCurrentVersion != null)
+            {
+                _lblFwCurrentVersion.Text = connected
+                    ? "Device firmware: " + (string.IsNullOrEmpty(fwVersion) ? "unknown (< 2.4, needs one cable flash)" : "v" + fwVersion)
+                    : "Device firmware: (not connected)";
+                UpdateFirmwareButtonState();
+            }
 
             if (connected)
             {
@@ -1443,10 +1474,258 @@ namespace PCMonitorClient
 
         #endregion
 
+        #region Firmware Update
+
+        private void CreateFirmwareTab()
+        {
+            int x = 20, y = 20;
+
+            var lblTitle = new Label
+            {
+                Text = "FIRMWARE UPDATE (OTA over USB)",
+                Location = new Point(x, y),
+                Size = new Size(400, 22),
+                ForeColor = ThemeAccent,
+                Font = new Font("Segoe UI", 10F, FontStyle.Bold)
+            };
+            _tabFirmware.Controls.Add(lblTitle);
+            y += 30;
+
+            var lblInfo = new Label
+            {
+                Text = "Pushes a new firmware image to the connected device over the USB serial link.\n" +
+                       "The device verifies the image (CRC32 + ESP-IDF validation), switches to the new\n" +
+                       "firmware and reboots. It reconnects automatically after ~10 seconds.\n" +
+                       "Select the app image from 'idf.py build' (pc-monitor-poc.bin).",
+                Location = new Point(x, y),
+                Size = new Size(800, 70),
+                ForeColor = ThemeTextSecondary
+            };
+            _tabFirmware.Controls.Add(lblInfo);
+            y += 80;
+
+            _lblFwCurrentVersion = new Label
+            {
+                Text = "Device firmware: (not connected)",
+                Location = new Point(x, y),
+                Size = new Size(500, 22),
+                ForeColor = ThemeTextPrimary,
+                Font = new Font("Segoe UI", 9.5F, FontStyle.Bold)
+            };
+            _tabFirmware.Controls.Add(_lblFwCurrentVersion);
+            y += 40;
+
+            var lblFile = new Label
+            {
+                Text = "Firmware file (.bin):",
+                Location = new Point(x, y),
+                AutoSize = true,
+                ForeColor = ThemeTextSecondary
+            };
+            _tabFirmware.Controls.Add(lblFile);
+            y += 22;
+
+            _txtFwPath = new TextBox
+            {
+                Location = new Point(x, y),
+                Size = new Size(560, 25),
+                BackColor = ThemeBgDark,
+                ForeColor = ThemeTextPrimary,
+                BorderStyle = BorderStyle.FixedSingle,
+                ReadOnly = true
+            };
+            _tabFirmware.Controls.Add(_txtFwPath);
+
+            _btnFwBrowse = CreateStyledButton("Browse...", x + 570, y - 1, 90, 27);
+            _btnFwBrowse.Click += (s, e) => BrowseFirmwareFile();
+            _tabFirmware.Controls.Add(_btnFwBrowse);
+            y += 45;
+
+            _btnFwFlash = new Button
+            {
+                Text = "⚡ Flash Firmware",
+                Location = new Point(x, y),
+                Size = new Size(180, 34),
+                FlatStyle = FlatStyle.Flat,
+                ForeColor = Color.White,
+                BackColor = Color.FromArgb(160, 60, 0),
+                Font = new Font("Segoe UI", 9.5F, FontStyle.Bold),
+                Cursor = Cursors.Hand,
+                Enabled = false
+            };
+            _btnFwFlash.FlatAppearance.BorderColor = ThemeWarning;
+            _btnFwFlash.Click += async (s, e) => await FlashFirmwareAsync();
+            _tabFirmware.Controls.Add(_btnFwFlash);
+            y += 50;
+
+            _progressFw = new ProgressBar
+            {
+                Location = new Point(x, y),
+                Size = new Size(660, 18),
+                Style = ProgressBarStyle.Continuous
+            };
+            _tabFirmware.Controls.Add(_progressFw);
+            y += 26;
+
+            _lblFwStatus = new Label
+            {
+                Text = "Select a firmware file to begin.",
+                Location = new Point(x, y),
+                Size = new Size(800, 20),
+                ForeColor = ThemeTextSecondary
+            };
+            _tabFirmware.Controls.Add(_lblFwStatus);
+        }
+
+        private void BrowseFirmwareFile()
+        {
+            using (var dlg = new OpenFileDialog())
+            {
+                dlg.Title = "Select Firmware Image";
+                dlg.Filter = "ESP32 Firmware (*.bin)|*.bin|All Files|*.*";
+
+                if (dlg.ShowDialog() != DialogResult.OK)
+                    return;
+
+                string error = FirmwareUploader.ValidateFirmwareFile(dlg.FileName);
+                if (error != null)
+                {
+                    _txtFwPath.Text = "";
+                    _btnFwFlash.Enabled = false;
+                    SetFwStatus("Invalid file: " + error, false);
+                    return;
+                }
+
+                _txtFwPath.Text = dlg.FileName;
+                var size = new FileInfo(dlg.FileName).Length;
+                SetFwStatus($"Ready: {Path.GetFileName(dlg.FileName)} ({size:N0} bytes)", true);
+                UpdateFirmwareButtonState();
+            }
+        }
+
+        private void UpdateFirmwareButtonState()
+        {
+            bool connected = IsConnected?.Invoke() ?? false;
+            _btnFwFlash.Enabled = connected
+                && !_isFlashingFirmware
+                && !_isUploading
+                && !string.IsNullOrEmpty(_txtFwPath.Text);
+        }
+
+        private async Task FlashFirmwareAsync()
+        {
+            string path = _txtFwPath.Text;
+            if (string.IsNullOrEmpty(path)) return;
+
+            if (!(IsConnected?.Invoke() ?? false))
+            {
+                MessageBox.Show("Not connected to any device!", "Error",
+                    MessageBoxButtons.OK, MessageBoxIcon.Error);
+                return;
+            }
+
+            // Re-validate right before flashing (file may have changed on disk)
+            string error = FirmwareUploader.ValidateFirmwareFile(path);
+            if (error != null)
+            {
+                SetFwStatus("Invalid file: " + error, false);
+                return;
+            }
+
+            var confirm = MessageBox.Show(
+                $"Flash firmware to '{(_connectedDeviceName == "" ? "connected device" : _connectedDeviceName)}'?\n\n" +
+                $"File: {Path.GetFileName(path)}\n" +
+                $"Current device firmware: {(_espFwVersion == "" ? "unknown (< 2.4)" : _espFwVersion)}\n\n" +
+                "The device will reboot after the update and reconnect automatically.\n" +
+                "Do NOT unplug the device during the transfer.",
+                "Confirm Firmware Update", MessageBoxButtons.YesNo, MessageBoxIcon.Warning);
+
+            if (confirm != DialogResult.Yes) return;
+
+            var port = GetSerialPort?.Invoke();
+            if (port == null || !port.IsOpen)
+            {
+                SetFwStatus("Error: Port not open", false);
+                return;
+            }
+
+            _isFlashingFirmware = true;
+            UpdateFirmwareButtonState();
+            _btnFwBrowse.Enabled = false;
+            SetUploadMode?.Invoke(true);
+
+            // Wait for the data loop to finish any in-flight transmission
+            await Task.Delay(300);
+
+            try
+            {
+                var uploader = new FirmwareUploader(port, GetPortWriteLock?.Invoke());
+                uploader.LogMessage += (s, msg) => AppendDebugLog($"[FW] {msg}");
+                uploader.ProgressChanged += (s, p) =>
+                {
+                    BeginInvoke((MethodInvoker)delegate
+                    {
+                        _progressFw.Value = Math.Min(100, (int)p.PercentComplete);
+                        _lblFwStatus.Text = $"Flashing: {p.BytesSent:N0}/{p.TotalBytes:N0} bytes ({p.PercentComplete:F0}%)";
+                    });
+                };
+
+                AppendDebugLog($"=== Firmware update started: {Path.GetFileName(path)} ===");
+                _progressFw.Value = 0;
+
+                bool success = await uploader.UploadFirmwareAsync(path);
+
+                if (success)
+                {
+                    AppendDebugLog("=== Firmware update complete - device rebooting ===");
+                    SetFwStatus("Update complete! Device is rebooting and will reconnect shortly...", true);
+                }
+                else
+                {
+                    AppendDebugLog("=== Firmware update FAILED ===");
+                    SetFwStatus("Update failed - see debug log. Device keeps running its old firmware.", false);
+                }
+            }
+            catch (Exception ex)
+            {
+                AppendDebugLog($"=== FW EXCEPTION: {ex.Message} ===");
+                SetFwStatus("Error: " + ex.Message, false);
+            }
+            finally
+            {
+                _isFlashingFirmware = false;
+                SetUploadMode?.Invoke(false);
+                BeginInvoke((MethodInvoker)delegate
+                {
+                    _btnFwBrowse.Enabled = true;
+                    UpdateFirmwareButtonState();
+                });
+            }
+        }
+
+        private void SetFwStatus(string message, bool ok)
+        {
+            if (InvokeRequired)
+            {
+                BeginInvoke((MethodInvoker)delegate { SetFwStatus(message, ok); });
+                return;
+            }
+            _lblFwStatus.Text = message;
+            _lblFwStatus.ForeColor = ok ? ThemeTextSecondary : ThemeError;
+        }
+
+        #endregion
+
         #region Image Upload
 
         private async Task UploadImageAsync(string filePath, ImageSlot slot)
         {
+            if (_isFlashingFirmware)
+            {
+                AppendDebugLog("Image upload blocked: firmware update in progress");
+                return;
+            }
+
             // Immediate debug output
             AppendDebugLog($"UploadImageAsync called: file={Path.GetFileName(filePath)}, slot={slot}");
 
@@ -1476,7 +1755,7 @@ namespace PCMonitorClient
 
             try
             {
-                var uploader = new ImageUploader(port);
+                var uploader = new ImageUploader(port, GetPortWriteLock?.Invoke());
                 AppendDebugLog("ImageUploader instance created, subscribing to events...");
 
                 // Subscribe to LogMessage for debug output

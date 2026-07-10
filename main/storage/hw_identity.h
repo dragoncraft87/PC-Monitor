@@ -21,6 +21,8 @@ typedef struct {
     char cpu_name[32];
     char gpu_name[32];
     char identity_hash[16];  /* 8 hex chars + null */
+    char device_name[24];    /* User-assigned name ("Office", "Living Room"),
+                              * set via SET_ID:, reported in handshake |N: */
 } hw_identity_t;
 
 /**
@@ -63,10 +65,30 @@ void hw_identity_set_gpu_name(const char *name);
 void hw_identity_set_hash(const char *hash);
 
 /**
+ * @brief Set user-assigned device name
+ *
+ * '|' characters are stripped (delimiter in the handshake response).
+ *
+ * @param name New device name (truncated to 23 chars)
+ */
+void hw_identity_set_device_name(const char *name);
+
+/**
  * @brief Handle NAME_* commands from serial
  * @param line Command line (e.g., "NAME_CPU=i9-7980XE")
  * @return true if command was handled, false otherwise
  */
 bool hw_identity_handle_command(const char *line);
+
+/**
+ * @brief Check-and-clear the "names changed" flag
+ *
+ * Set by the USB task when NAME_CPU/NAME_GPU arrived. Must be polled from
+ * the UI thread (under LVGL mutex), which then applies the new labels via
+ * ui_manager_apply_hardware_names().
+ *
+ * @return true exactly once per name change
+ */
+bool hw_identity_consume_names_dirty(void);
 
 #endif /* HW_IDENTITY_H */

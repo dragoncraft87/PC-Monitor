@@ -47,6 +47,7 @@
 #include "storage/hw_identity.h"
 #include "gui_settings.h"
 #include "drivers/usb_serial_comm.h"
+#include "drivers/fw_update.h"
 #include "ui/ui_manager.h"
 #include "ui/screensaver_mgr.h"
 #include "screens/screens_lvgl.h"
@@ -57,7 +58,10 @@ static const char *TAG = "MAIN";
  * CONFIGURATION
  * ========================================================================== */
 #define SCREENSAVER_TIMEOUT_MS   30000   /* 30 seconds no data -> screensaver */
-#define STALE_DATA_THRESHOLD_MS  2000    /* 2 seconds -> show red dot */
+#define STALE_DATA_THRESHOLD_MS  3000    /* 3 seconds -> show red dot
+                                          * (client sends ~1/s, but GetStats()
+                                          * can occasionally take >1s - 2s margin
+                                          * caused false red-dot flicker) */
 #define DISPLAY_UPDATE_MS        100     /* 10 FPS - Watchdog friendly */
 
 /* =============================================================================
@@ -175,6 +179,11 @@ static void display_update_task(void *arg)
             /* Process pending image reloads from USB task (Thread-Safety Fix)
              * This MUST be done in the UI thread to avoid race conditions */
             ss_process_updates();
+
+            /* Apply new hardware names (NAME_CPU/NAME_GPU) in the UI thread */
+            if (hw_identity_consume_names_dirty()) {
+                ui_manager_apply_hardware_names();
+            }
 
             /* Screensaver logic */
             if (should_screensave && !ui_manager_is_screensaver_active()) {
@@ -305,6 +314,7 @@ void app_main(void)
     usb_serial_register_handler(ui_manager_handle_color_command);
     usb_serial_register_handler(ss_image_handle_command);
     usb_serial_register_handler(gui_settings_handle_command);
+    usb_serial_register_handler(fw_update_handle_command);
 
     /* Set theme callback for gui_settings (SET_SS_BG command) */
     gui_settings_set_theme_callback(theme_update_callback);

@@ -734,10 +734,13 @@ namespace PCMonitorClient
                 clean = clean.Substring(0, atIndex);
 
             // Remove common verbose suffixes
+            // NOTE: " SUPER" must NOT be stripped - "RTX 2080 SUPER" is a
+            // different card than "RTX 2080". Same for Ti/XT (handled in
+            // phase 3 only as last resort when the name is too long).
             string[] suffixPatterns = {
                 " Processor", " CPU", " Graphics", " Edition",
                 " Extreme", " Ultimate", " Black", " White",
-                " Founders", " Gaming", " OC", " SUPER"
+                " Founders", " Gaming", " OC"
             };
 
             foreach (var suffix in suffixPatterns)

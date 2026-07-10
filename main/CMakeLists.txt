@@ -6,6 +6,7 @@ idf_component_register(
         # Drivers
         "lvgl_gc9a01_driver.c"
         "drivers/usb_serial_comm.c"
+        "drivers/fw_update.c"
 
         # Storage modules
         "storage/storage_mgr.c"
@@ -40,6 +41,14 @@ idf_component_register(
         lvgl
         esp_lcd
         driver
+        app_update
+        esp_app_format
 )
 
-littlefs_create_partition_image(storage lfs FLASH_IN_PROJECT)
+# Build the LittleFS image but do NOT flash it with 'idf.py flash'.
+# User data (uploaded screensaver images, theme colors, hardware names) must
+# survive firmware updates. LittleFS auto-formats an empty partition on first
+# boot (format_if_mount_failed=true), so flashing storage.bin is optional.
+# To provision it manually once:
+#   esptool.py write_flash 0x820000 build/storage.bin   (offset: see partitions.csv)
+littlefs_create_partition_image(storage lfs)
