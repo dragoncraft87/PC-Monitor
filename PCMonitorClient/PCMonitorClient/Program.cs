@@ -700,6 +700,14 @@ namespace PCMonitorClient
             }
             catch { }
 
+            // Target interval between packets. We measure how long GetStats()
+            // + Write take and subtract that, so the ESP receives data at a
+            // steady ~1s cadence instead of 1s PLUS the (variable, up to ~800ms
+            // in Full Mode) collection time - which otherwise let the gap creep
+            // past the stale threshold and flash the red "disconnected" dot.
+            const int TARGET_INTERVAL_MS = 1000;
+            var iterTimer = new System.Diagnostics.Stopwatch();
+
             while (!ct.IsCancellationRequested && port.IsOpen)
             {
                 try
@@ -710,6 +718,8 @@ namespace PCMonitorClient
                         Thread.Sleep(200);
                         continue;
                     }
+
+                    iterTimer.Restart();
 
                     var s = _collector.GetStats();
 
@@ -736,8 +746,12 @@ namespace PCMonitorClient
                     // Update status form (only if visible, handled internally)
                     _statusForm.UpdateData("TX: " + data.Trim());
 
-                    // Sleep in chunks for fast cancel
-                    for (int i = 0; i < 10 && !ct.IsCancellationRequested; i++)
+                    // Sleep the remainder of the target interval (min 100ms),
+                    // in 100ms chunks for fast cancellation
+                    int remaining = TARGET_INTERVAL_MS - (int)iterTimer.ElapsedMilliseconds;
+                    if (remaining < 100) remaining = 100;
+                    int chunks = (remaining + 99) / 100;
+                    for (int i = 0; i < chunks && !ct.IsCancellationRequested; i++)
                         Thread.Sleep(100);
                 }
                 catch (OperationCanceledException)

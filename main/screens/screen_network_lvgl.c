@@ -11,6 +11,7 @@
 
 #include "screens_lvgl.h"
 #include <stdio.h>
+#include <string.h>
 
 /* Widget handles and NETWORK_HISTORY_SIZE defined in screens_lvgl.h */
 
@@ -20,6 +21,10 @@ screen_network_t *screen_network_create(lv_display_t *disp)
     if (!s) return NULL;
 
     s->history_index = 0;
+    s->last_down = SCREEN_VALUE_SENTINEL;
+    s->last_up = SCREEN_VALUE_SENTINEL;
+    s->last_type[0] = '\0';
+    s->last_speed[0] = '\0';
 
     /* Set this display as default temporarily */
     lv_display_t *old_default = lv_display_get_default();
@@ -123,6 +128,21 @@ lv_obj_t *screen_network_get_screen(screen_network_t *s)
 void screen_network_update(screen_network_t *s, const pc_stats_t *stats)
 {
     if (!s) return;
+
+    /* Skip redraw if nothing changed. Critical here: without this the chart
+     * shifts at the 10 FPS display rate instead of once per real data packet,
+     * making the traffic graph scroll ~10x too fast. */
+    if (stats->net_down_mbps == s->last_down && stats->net_up_mbps == s->last_up &&
+        strcmp(stats->net_type, s->last_type) == 0 &&
+        strcmp(stats->net_speed, s->last_speed) == 0) {
+        return;
+    }
+    s->last_down = stats->net_down_mbps;
+    s->last_up = stats->net_up_mbps;
+    strncpy(s->last_type, stats->net_type, sizeof(s->last_type) - 1);
+    s->last_type[sizeof(s->last_type) - 1] = '\0';
+    strncpy(s->last_speed, stats->net_speed, sizeof(s->last_speed) - 1);
+    s->last_speed[sizeof(s->last_speed) - 1] = '\0';
 
     /* Update connection type */
     lv_label_set_text(s->label_conn_type, stats->net_type);

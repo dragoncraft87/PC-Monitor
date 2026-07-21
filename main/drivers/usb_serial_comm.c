@@ -21,11 +21,37 @@ static const char *TAG = "USB-COMM";
 /* Thread-safety configuration */
 #define STATS_MUTEX_TIMEOUT_MS  100  /* Never block indefinitely! */
 
+/* N/A hold ("glitch absorption"):
+ * The PC client sends -1 for a sensor when a single read fails (e.g.
+ * LibreHardwareMonitor returns null for one update cycle). Showing that
+ * instantly makes the screen flick to "N/A" and back. Instead we keep the
+ * last valid value for up to HOLD_MAX_PACKETS consecutive misses; only a
+ * sustained outage (sensor really gone) is shown as N/A. */
+#define HOLD_MAX_PACKETS  4
+
 /* Global state */
 static pc_stats_t s_pc_stats = {0};
 static volatile uint32_t s_last_data_ms = 0;
 static SemaphoreHandle_t s_stats_mutex = NULL;
 static uint32_t s_stats_mutex_timeouts = 0;
+
+/* Per-field miss counters for the N/A hold logic */
+static struct {
+    uint8_t cpu_pct, cpu_temp, gpu_pct, gpu_temp, vram, ram, net_dn, net_up;
+} s_hold = {0};
+
+/* If the new field is N/A (<0) and we haven't held too long, keep the old
+ * value; otherwise accept the new value and reset the counter. */
+#define HOLD_FIELD(newv, oldv, counter) do {          \
+    if ((newv) < 0) {                                 \
+        if ((counter) < HOLD_MAX_PACKETS) {           \
+            (newv) = (oldv);                          \
+            (counter)++;                              \
+        }                                             \
+    } else {                                          \
+        (counter) = 0;                                \
+    }                                                 \
+} while (0)
 
 /* Command handlers (max 8) */
 #define MAX_CMD_HANDLERS 8
@@ -176,6 +202,35 @@ static void parse_pc_data(const char *line)
     if (fields_parsed >= 5) {
         /* Thread-safe write with timeout - NEVER use portMAX_DELAY! */
         if (xSemaphoreTake(s_stats_mutex, pdMS_TO_TICKS(STATS_MUTEX_TIMEOUT_MS)) == pdTRUE) {
+            /* Absorb single-sample sensor glitches: replace freshly-arrived
+             * N/A fields with the last valid value for a few packets. */
+            HOLD_FIELD(temp_stats.cpu_percent, s_pc_stats.cpu_percent, s_hold.cpu_pct);
+            HOLD_FIELD(temp_stats.cpu_temp,    s_pc_stats.cpu_temp,    s_hold.cpu_temp);
+            HOLD_FIELD(temp_stats.gpu_percent, s_pc_stats.gpu_percent, s_hold.gpu_pct);
+            HOLD_FIELD(temp_stats.gpu_temp,    s_pc_stats.gpu_temp,    s_hold.gpu_temp);
+            HOLD_FIELD(temp_stats.net_down_mbps, s_pc_stats.net_down_mbps, s_hold.net_dn);
+            HOLD_FIELD(temp_stats.net_up_mbps,   s_pc_stats.net_up_mbps,   s_hold.net_up);
+
+            /* VRAM and RAM are used/total pairs - hold both together */
+            if (temp_stats.gpu_vram_used < 0) {
+                if (s_hold.vram < HOLD_MAX_PACKETS) {
+                    temp_stats.gpu_vram_used  = s_pc_stats.gpu_vram_used;
+                    temp_stats.gpu_vram_total = s_pc_stats.gpu_vram_total;
+                    s_hold.vram++;
+                }
+            } else {
+                s_hold.vram = 0;
+            }
+            if (temp_stats.ram_used_gb < 0) {
+                if (s_hold.ram < HOLD_MAX_PACKETS) {
+                    temp_stats.ram_used_gb  = s_pc_stats.ram_used_gb;
+                    temp_stats.ram_total_gb = s_pc_stats.ram_total_gb;
+                    s_hold.ram++;
+                }
+            } else {
+                s_hold.ram = 0;
+            }
+
             s_pc_stats = temp_stats;
             s_last_data_ms = (uint32_t)(esp_timer_get_time() / 1000);
             xSemaphoreGive(s_stats_mutex);

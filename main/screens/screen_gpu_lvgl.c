@@ -18,6 +18,11 @@ screen_gpu_t *screen_gpu_create(lv_display_t *disp)
     screen_gpu_t *s = malloc(sizeof(screen_gpu_t));
     if (!s) return NULL;
 
+    s->last_percent = SCREEN_VALUE_SENTINEL;
+    s->last_temp = SCREEN_VALUE_SENTINEL;
+    s->last_vram_used = SCREEN_VALUE_SENTINEL;
+    s->last_vram_total = SCREEN_VALUE_SENTINEL;
+
     /* Set this display as default temporarily */
     lv_display_t *old_default = lv_display_get_default();
     lv_display_set_default(disp);
@@ -122,6 +127,16 @@ lv_obj_t *screen_gpu_get_screen(screen_gpu_t *s)
 void screen_gpu_update(screen_gpu_t *s, const pc_stats_t *stats)
 {
     if (!s) return;
+
+    /* Skip redraw if nothing changed (display task runs faster than data arrives) */
+    if (stats->gpu_percent == s->last_percent && stats->gpu_temp == s->last_temp &&
+        stats->gpu_vram_used == s->last_vram_used && stats->gpu_vram_total == s->last_vram_total) {
+        return;
+    }
+    s->last_percent = stats->gpu_percent;
+    s->last_temp = stats->gpu_temp;
+    s->last_vram_used = stats->gpu_vram_used;
+    s->last_vram_total = stats->gpu_vram_total;
 
     /* ---- Load ---- */
     if (stats->gpu_percent < 0) {

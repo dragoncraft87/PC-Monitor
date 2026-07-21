@@ -25,12 +25,21 @@ extern "C" {
  */
 #define NETWORK_HISTORY_SIZE 60
 
+/* last_* fields cache the previously displayed values so update functions can
+ * skip redundant LVGL calls. The display task runs at 10 FPS but real data
+ * arrives ~1x/s; without this every widget is redrawn 10x/s (visible flicker,
+ * and the network chart scrolls 10x too fast). Sentinel -999 forces the first
+ * update to draw. */
+#define SCREEN_VALUE_SENTINEL (-999)
+
 struct screen_cpu_t {
     lv_obj_t *screen;
     lv_obj_t *arc;
     lv_obj_t *label_title;
     lv_obj_t *label_percent;
     lv_obj_t *label_temp;
+    int16_t last_percent;
+    float last_temp;
 };
 
 struct screen_gpu_t {
@@ -40,6 +49,10 @@ struct screen_gpu_t {
     lv_obj_t *label_percent;
     lv_obj_t *label_temp;
     lv_obj_t *label_vram;
+    int16_t last_percent;
+    float last_temp;
+    float last_vram_used;
+    float last_vram_total;
 };
 
 struct screen_ram_t {
@@ -49,6 +62,8 @@ struct screen_ram_t {
     lv_obj_t *label_percent;
     lv_obj_t *bar;
     lv_obj_t *label_total;
+    float last_used;
+    float last_total;
 };
 
 struct screen_network_t {
@@ -62,6 +77,10 @@ struct screen_network_t {
     lv_obj_t *label_down;
     lv_obj_t *label_up;
     int history_index;
+    float last_down;
+    float last_up;
+    char last_type[16];
+    char last_speed[16];
 };
 
 typedef struct screen_cpu_t screen_cpu_t;

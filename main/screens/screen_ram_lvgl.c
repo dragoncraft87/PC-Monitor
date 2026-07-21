@@ -19,6 +19,9 @@ screen_ram_t *screen_ram_create(lv_display_t *disp)
     screen_ram_t *s = malloc(sizeof(screen_ram_t));
     if (!s) return NULL;
 
+    s->last_used = SCREEN_VALUE_SENTINEL;
+    s->last_total = SCREEN_VALUE_SENTINEL;
+
     /* Set this display as default temporarily */
     lv_display_t *old_default = lv_display_get_default();
     lv_display_set_default(disp);
@@ -98,6 +101,13 @@ lv_obj_t *screen_ram_get_screen(screen_ram_t *s)
 void screen_ram_update(screen_ram_t *s, const pc_stats_t *stats)
 {
     if (!s) return;
+
+    /* Skip redraw if nothing changed (display task runs faster than data arrives) */
+    if (stats->ram_used_gb == s->last_used && stats->ram_total_gb == s->last_total) {
+        return;
+    }
+    s->last_used = stats->ram_used_gb;
+    s->last_total = stats->ram_total_gb;
 
     /* ---- Check for sensor error (N/A case) ---- */
     if (stats->ram_used_gb < 0.0f || stats->ram_total_gb < 0.0f) {

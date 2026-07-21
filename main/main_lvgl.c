@@ -58,10 +58,12 @@ static const char *TAG = "MAIN";
  * CONFIGURATION
  * ========================================================================== */
 #define SCREENSAVER_TIMEOUT_MS   30000   /* 30 seconds no data -> screensaver */
-#define STALE_DATA_THRESHOLD_MS  3000    /* 3 seconds -> show red dot
-                                          * (client sends ~1/s, but GetStats()
-                                          * can occasionally take >1s - 2s margin
-                                          * caused false red-dot flicker) */
+#define STALE_DATA_THRESHOLD_MS  4500    /* 4.5s -> show red dot. Client sends
+                                          * ~1/s, but a slow GetStats() cycle
+                                          * (LibreHardwareMonitor) plus one held
+                                          * packet can briefly exceed 3s; 4.5s
+                                          * stops the red dot from flickering
+                                          * during normal operation. */
 #define DISPLAY_UPDATE_MS        100     /* 10 FPS - Watchdog friendly */
 
 /* =============================================================================
